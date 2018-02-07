@@ -25,9 +25,9 @@ PROGRAM track
 	CALL MPI_COMM_RANK(MPI_COMM_WORLD, rank, ierr)
 	CALL MPI_COMM_SIZE(MPI_COMM_WORLD, size, ierr)
 	
-	IF (IARGC() .NE. 3) THEN
+	IF (IARGC() .NE. 4 .AND. IARGC() .NE. 3) THEN
 		PRINT *, "Error! Not enough or too many arguments!"
-		PRINT *, "timestep n_traj OUTFILE"
+		PRINT *, "timestep n_traj OUTFILE (OUTFILE2)"
 		CALL MPI_FINALIZE(ierr)
 		CALL EXIT(0)
 	END IF
@@ -44,8 +44,15 @@ PROGRAM track
 	fName = TRIM(fName) // TRIM(rankString)
 	
 	PRINT *, fName
-	
 	OPEN(UNIT=1,FILE=fName, FORM='UNFORMATTED')
+	
+	IF (IARGC() .EQ. 4) THEN
+		CALL GETARG(4, fName2)
+		WRITE (rankString, "(IO)") rank
+		fName2 = TRIM(fName2) // TRIM(rankString)		
+		PRINT *, fName2
+		OPEN(UNIT=2, FILE=fName2, FORM='UNFORMATTED'
+	END IF
 	
 	trajPerWorker = ntraj/size
 	
@@ -105,8 +112,15 @@ PROGRAM track
 !		CALL trackEnergyGain(states(i,:), energy_start, energy_end)
 !		PRINT *, rank, i, energy_start, energy_end, (energy_end - energy_start)/energy_start
 !		PRINT *, rank, i, (energy_end - energy_start)/energy_start
-		CALL trackDaggerHitTime(states(i, :))
-
+		IF (IARGC() .EQ. 3) THEN
+			CALL trackDaggerHitTime(states(i, :))
+		ELSE IF (IARGC() .EQ. 4 THEN
+			PRINT *, "Starting run with Aluminum block!"
+			CALL trackDaggerAndBlock(states(i, :))
+		ELSE
+			CALL MPI_FINALIZE(ierr)
+			CALL EXIT(0)
+		END IF 
 !		CALL trackDaggerHitTimeFixedEff(states(i, :))
 	END DO
     

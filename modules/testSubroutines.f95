@@ -23,17 +23,17 @@ SUBROUTINE zOffDipCalc(t, z)
 	real(kind=PREC), intent(in) :: t
 	real(kind=PREC), intent(out) :: z
 	
-	integer :: nDips = 10
+	integer :: nDips = 4
 	real(kind=PREC) :: speed
-	real(kind=PREC), dimension(10) :: dipHeights
-	real(kind=PREC), dimension(10) :: dipEnds
+	real(kind=PREC), dimension(4) :: dipHeights
+	real(kind=PREC), dimension(4) :: dipEnds
 	
 	integer :: i
 	
-	dipHeights = (/0.49, 0.380, 0.250, 0.180, 0.140, 0.110, 0.080, 0.060, 0.040, 0.010/)
-!	dipHeights = (/0.49_8, 0.380_8, 0.250_8, 0.180_8, 0.01_8/)
-	dipEnds =     (/0.0,  40.0,  80.0,  100.0, 120.0, 140.0, 160.0, 180.0, 200.0, 300.0/)
-!	dipEnds =     (/0.0_8,  40.0_8, 80.0_8,  400.0_8, 500.0_8/)
+!	dipHeights = (/0.49, 0.380, 0.250, 0.180, 0.140, 0.110, 0.080, 0.060, 0.040, 0.010/)
+	dipHeights = (/0.49_8, 0.380_8, 0.250_8, 0.010_8 /)
+!	dipEnds =     (/0.0,  40.0,  80.0,  100.0, 120.0, 140.0, 160.0, 180.0, 200.0, 300.0/)
+	dipEnds =     (/0.0_8,  40.0_8, 60.0_8,  210.0_8 /)
 	
 	IF (t > dipEnds(nDips)) THEN
 		z = 0.01
@@ -227,6 +227,82 @@ SUBROUTINE trackDaggerHitTimeFixedEff(state)
 	END DO
 END SUBROUTINE trackDaggerHitTimeFixedEff
 
+SUBROUTINE trackDaggerAndBlock(state)
+
+	USE symplecticInt
+	USE constants
+	USE forcesAndPotential
+	IMPLICIT NONE
+	real(kind=PREC), dimension(6), intent(inout) :: state
+	real(kind=PREC), dimension(6) :: prevState
+
+	real(kind=PREC) :: t, fracTravel, predX, predZ, energy, zOff, zeta
+	real(kind=PREC) :: settlingTime
+	real(kind=4), dimension(50) :: hitT
+	real(kind=4), dimension(50) :: hitE
+	
+	integer :: i, numSteps, nHit
+	
+	nHit = 0
+		
+	hitT = 0.0_8
+	hitE = 0.0_8
+	
+	t = 0.0_8
+	
+	settlingTime = 20.0_8 + 50.0_8
+	
+	numSteps = settlingTime/dt
+	DO i=1,numSteps,1
+		CALL symplecticStep(state, dt, energy)
+		t = t + dt
+		CALL check_upscatter(state, t, energy)
+	END DO
+	
+	DO
+		prevState = state
+		CALL symplecticStep(state, dt, energy)
+		t = t + dt
+		CALL check_upscatter(state,t,energy) 
+		IF (SIGN(1.0_8, state(2)) .NE. SIGN(1.0_8, prevState(2))) THEN
+			fracTravel = ABS(prevState(2))/(ABS(state(2)) + ABS(prevState(2)))
+			predX = prevState(1) + fracTravel * (state(1) - prevState(1))
+			predZ = prevState(3) + fracTravel * (state(3) - prevState(3))
+			
+			CALL zOffDipCalc(t - settlingTime, zOff)
+			IF (predX > 0.0_8) THEN
+				zeta = 0.5_8 - SQRT(predX**2 + (ABS(predZ - zOff) - 1.0_8)**2)
+			ELSE
+				zeta = 1.0_8 - SQRT(predX**2 + (ABS(predZ - zOff) - 0.5_8)**2)
+			END IF
+			IF (ABS(predX) < .2 .AND. zeta > 0.0_8 .AND. predZ < (-1.5_8 + zOff + 0.2_8)) THEN
+				nHit = nHit + 1
+				hitT(nHit) = t - settlingTime
+				hitE(nHit) = state(5)*state(5)/(2.0_8*MASS_N)
+				IF (nHit .EQ. 50) THEN
+					EXIT
+				END IF
+				IF (prevState(2) > 0 .AND. prevState(5) < 0) THEN
+					CALL reflect(prevState, (/0.0_8, 1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
+					state = prevState
+				ELSE IF (prevState(2) < 0 .AND. prevState(5) > 0) THEN
+					CALL reflect(prevState, (/0.0_8, -1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
+					state = prevState
+				ELSE
+					PRINT *, "UHOH"
+				END IF
+!				WRITE(1) t - (20.0_8 + 50.0_8), predX, predZ - zOff
+!				EXIT
+			END IF
+			
+			IF (t > 2000) THEN
+				EXIT
+			END IF
+		END IF
+	END DO
+	WRITE(1) energy, hitT, hitE
+END SUBROUTINE trackDaggerAndBlock
+
 SUBROUTINE trackEnergyGain(state, energy_start, energy_end, sympT, freq)
 	USE symplecticInt
 	USE constants
@@ -391,5 +467,81 @@ SUBROUTINE calcx0Mesh()
 		END DO
 	END DO
 END SUBROUTINE calcx0Mesh
+
+SUBROUTINE check_upscatter(state, energy, t)
+
+	USE constants
+	USE forcesAndPotential
+	IMPLICIT NONE
+	
+	real(kind=PREC), intent(inout), dimension(6) :: state
+	real(kind=PREC), dimension(6) :: shiftState
+		
+	real(kind=PREC) :: t, energy
+	real(kind=PREC) :: hitU, upscatterProb
+		
+	real(kind=PREC), dimension(3,3) :: rotation, invRotation
+	real(kind=PREC), dimension(3) :: blockSize
+	real(kind=PREC), dimension(3) :: blockPos
+	
+	upscatterProb = 1.0_8
+	rotation = RESHAPE((/ 0.305229_8, 0.944162_8, 0.124068_8, -0.939275_8, &
+				0.319953_8, -0.124068_8, -0.156836_8, -0.0786645_8, 0.984487_8 /), &
+				SHAPE(rotation))
+	invRotation = RESHAPE((/ 0.305229_8, -0.939275_8, -0.156836_8, 0.944162_8, &
+				0.319953_8, -0.0786645_8, 0.124068_8, -0.124068_8, 0.984487_8 /), &
+				SHAPE(invRotation))
+	blockSize = (/ 0.0125_8, 0.0125_8, 0.00625_8 /)
+	blockPos = (/ 0.2207_8, 0.127_8, -1.4431_8/)
+	
+	!Shift the neutron position to "block coordinates"
+	shiftState = (/ MATMUL(rotation, state(1:3) - blockPos), state(4:6) /)
+	
+	!Check if the neutron is inside the block
+	IF (ABS(shiftState(1)) .LT. blockSize(1)) THEN
+		CALL RANDOM_NUMBER(hitU)
+		IF (hitU < upscatterProb) THEN 
+			WRITE(2) t, energy, state(5)*state(5)/(2.0_8*MASS_N)
+			STOP
+		!If we don't upscatter, reflect off the block.
+		ELSE IF (shiftState(1) .GT. 0 .AND. shiftState(4) .LT. 0) THEN 
+			CALL reflect(shiftState, (/ 1.0_8, 0.0_8, 0.0_8 /), (/ 0.0_8, 0.0_8, 1.0_8 /))
+			state = (/ MATMUL(invRotation, shiftState(1:3)) + blockPos, shiftState(4:6) /)
+		ELSE IF (shiftState(1) .LT. 0 .AND. shiftState(4) .GT. 0) THEN
+			CALL reflect(shiftState, (/ -1.0_8, 0.0_8, 0.0_8 /), (/ 0.0_8, 0.0_8, 1.0_8 /))
+			state = (/ MATMUL(invRotation, shiftState(1:3)) + blockPos, shiftState(4:6) /)
+		ELSE 
+			PRINT *, "UHOH"
+		END IF
+	!Same but in y
+	ELSE IF (ABS(shiftState(2)) .LT. blockSize(2)) THEN
+		CALL RANDOM_NUMBER(hitU)
+		IF (hitU < upscatterProb) THEN 
+			WRITE(2) t, energy, state(5)*state(5)/(2.0_8*MASS_N)
+			STOP
+		ELSE IF (shiftState(2) .GT. 0 .AND. shiftState(5) .LT. 0) THEN 
+			CALL reflect(shiftState, (/ 0.0_8, 1.0_8, 0.0_8 /), (/ 0.0_8, 0.0_8, 1.0_8 /))
+			state = (/ MATMUL(invRotation, shiftState(1:3)) + blockPos, shiftState(4:6) /)
+		ELSE IF (shiftState(2) .LT. 0 .AND. shiftState(5) .GT. 0) THEN
+			CALL reflect(shiftState, (/ 0.0_8, -1.0_8, 0.0_8 /), (/ 0.0_8, 0.0_8, 1.0_8 /))
+			state = (/ MATMUL(invRotation, shiftState(1:3)) + blockPos, shiftState(4:6) /)
+		ELSE 
+			PRINT *, "UHOH"
+		END IF
+	!Also z, but there's only one possible z coord
+	ELSE IF (ABS(shiftState(3)) .LT. blockSize(3)) THEN
+		CALL RANDOM_NUMBER(hitU)
+		IF (hitU < upscatterProb) THEN 
+			WRITE(2) t, energy, state(5)*state(5)/(2.0_8*MASS_N)
+			STOP
+		ELSE IF (shiftState(3) .GT. 0 .AND. shiftState(6) .LT. 0) THEN 
+			CALL reflect(shiftState, (/ 0.0_8, 0.0_8, 1.0_8 /), (/ 1.0_8, 0.0_8, 0.0_8 /))
+			state = (/ MATMUL(invRotation, shiftState(1:3)) + blockPos, shiftState(4:6) /)
+		ELSE 
+			PRINT *, "UHOH"
+		END IF
+	END IF
+	
+END SUBROUTINE check_upscatter
 
 END MODULE
