@@ -13,7 +13,7 @@ PROGRAM track
 	real(kind=PREC) :: freq, height
 	real(kind=PREC), allocatable :: states(:,:)
 	character(len=256) :: arg
-	character(len=256) :: fName
+	character(len=256) :: fName, fName2
 	character(len=256) :: rankString
 	integer :: i, j, k
 	integer :: seedLen
@@ -24,7 +24,7 @@ PROGRAM track
 	CALL MPI_INIT(ierr)
 	CALL MPI_COMM_RANK(MPI_COMM_WORLD, rank, ierr)
 	CALL MPI_COMM_SIZE(MPI_COMM_WORLD, size, ierr)
-	
+	!rank = 2
 	IF (IARGC() .NE. 4 .AND. IARGC() .NE. 3) THEN
 		PRINT *, "Error! Not enough or too many arguments!"
 		PRINT *, "timestep n_traj OUTFILE (OUTFILE2)"
@@ -39,7 +39,7 @@ PROGRAM track
 	CALL GETARG(3, fName)
 !	READ(arg, FORMAT=A) fName
 	
-	write (rankString, "(I0)") rank
+	WRITE (rankString, "(I0)") rank
 	
 	fName = TRIM(fName) // TRIM(rankString)
 	
@@ -48,10 +48,10 @@ PROGRAM track
 	
 	IF (IARGC() .EQ. 4) THEN
 		CALL GETARG(4, fName2)
-		WRITE (rankString, "(IO)") rank
+		WRITE (rankString, "(I0)") rank
 		fName2 = TRIM(fName2) // TRIM(rankString)		
 		PRINT *, fName2
-		OPEN(UNIT=2, FILE=fName2, FORM='UNFORMATTED'
+		OPEN(UNIT=2, FILE=fName2, FORM='UNFORMATTED')
 	END IF
 	
 	trajPerWorker = ntraj/size
@@ -89,6 +89,7 @@ PROGRAM track
 		PRINT *, "Error! The requested length of seed is too long"
 		CALL EXIT(0)
 	END IF
+	PRINT *, "called a seed!"
 	!I'm not going to care about proper types since it's just for seed values
 	rngSeed(1) = 4434
 	DO i=2,seedLen,1
@@ -100,10 +101,12 @@ PROGRAM track
 !		CALL zOffDipCalc(i*(250.0_8/100.0_8), z)
 !		PRINT *, z, i*(250.0_8/100.0_8)
 !	END DO
-		
+			
 	DO i=1,ntraj,1
 		CALL randomPointTrap(states(i,1), states(i,2), states(i,3), states(i,4), states(i,5), states(i,6))
 	END DO
+	!PRINT *, states(1,:)
+	!PRINT *, "called a random point trap"
 	
 	DO i=trajPerWorker*rank+1,trajPerWorker*(rank+1),1
 !		sympT = 0.0_8
@@ -113,16 +116,18 @@ PROGRAM track
 !		PRINT *, rank, i, energy_start, energy_end, (energy_end - energy_start)/energy_start
 !		PRINT *, rank, i, (energy_end - energy_start)/energy_start
 		IF (IARGC() .EQ. 3) THEN
+		!	PRINT *, "starting run without al block"
 			CALL trackDaggerHitTime(states(i, :))
-		ELSE IF (IARGC() .EQ. 4 THEN
-			PRINT *, "Starting run with Aluminum block!"
+		ELSE IF (IARGC() .EQ. 4) THEN
+		!	PRINT *, "Starting run with Aluminum block!"
 			CALL trackDaggerAndBlock(states(i, :))
 		ELSE
-			CALL MPI_FINALIZE(ierr)
+			PRINT *, "Error! something happened with iarg"
+		!	CALL MPI_FINALIZE(ierr)
 			CALL EXIT(0)
 		END IF 
 !		CALL trackDaggerHitTimeFixedEff(states(i, :))
-	END DO
+	!END DO
     
 !    CALL trackDaggerHitTime(states(ntraj, :))
     

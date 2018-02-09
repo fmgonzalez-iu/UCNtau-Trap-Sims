@@ -104,7 +104,7 @@ SUBROUTINE trackDaggerHitTime(state)
 	integer :: i, numSteps, nHit
 	
 	nHit = 0
-		
+	!PRINT *, "Started dagger hit time function"
 	hitT = 0.0_8
 	hitE = 0.0_8
 	
@@ -117,6 +117,8 @@ SUBROUTINE trackDaggerHitTime(state)
 		CALL symplecticStep(state, dt, energy)
 		t = t + dt
 	END DO
+	
+	!PRINT *, "got to end of settling time!"
 	
 	DO
 		prevState = state
@@ -158,6 +160,8 @@ SUBROUTINE trackDaggerHitTime(state)
 			END IF
 		END IF
 	END DO
+	!PRINT *, "Got to end of dagger detection!"
+	
 	WRITE(1) energy, hitT, hitE
 END SUBROUTINE trackDaggerHitTime
 
@@ -236,7 +240,7 @@ SUBROUTINE trackDaggerAndBlock(state)
 	real(kind=PREC), dimension(6), intent(inout) :: state
 	real(kind=PREC), dimension(6) :: prevState
 
-	real(kind=PREC) :: t, fracTravel, predX, predZ, energy, zOff, zeta
+	real(kind=PREC) :: t, fracTravel, predX, predZ, energy, zOff, zeta, hitU
 	real(kind=PREC) :: settlingTime
 	real(kind=4), dimension(50) :: hitT
 	real(kind=4), dimension(50) :: hitE
@@ -251,14 +255,18 @@ SUBROUTINE trackDaggerAndBlock(state)
 	t = 0.0_8
 	
 	settlingTime = 20.0_8 + 50.0_8
-	
+!	PRINT *, "loaded dagger and block!"
+!	PRINT *, state
 	numSteps = settlingTime/dt
+	
 	DO i=1,numSteps,1
 		CALL symplecticStep(state, dt, energy)
+		!PRINT *, state(2)
 		t = t + dt
 		CALL check_upscatter(state, t, energy)
 	END DO
 	
+!	PRINT *, "Got to end of settling period detection!"
 	DO
 		prevState = state
 		CALL symplecticStep(state, dt, energy)
@@ -291,15 +299,18 @@ SUBROUTINE trackDaggerAndBlock(state)
 				ELSE
 					PRINT *, "UHOH"
 				END IF
-!				WRITE(1) t - (20.0_8 + 50.0_8), predX, predZ - zOff
-!				EXIT
 			END IF
 			
 			IF (t > 2000) THEN
 				EXIT
 			END IF
 		END IF
+		
+		!PRINT *, state
+		
 	END DO
+	
+	PRINT *, "Got to end of dagger detection!"
 	WRITE(1) energy, hitT, hitE
 END SUBROUTINE trackDaggerAndBlock
 
@@ -468,7 +479,7 @@ SUBROUTINE calcx0Mesh()
 	END DO
 END SUBROUTINE calcx0Mesh
 
-SUBROUTINE check_upscatter(state, energy, t)
+SUBROUTINE check_upscatter(state, t, energy)
 
 	USE constants
 	USE forcesAndPotential
@@ -496,12 +507,19 @@ SUBROUTINE check_upscatter(state, energy, t)
 	
 	!Shift the neutron position to "block coordinates"
 	shiftState = (/ MATMUL(rotation, state(1:3) - blockPos), state(4:6) /)
-	
 	!Check if the neutron is inside the block
-	IF (ABS(shiftState(1)) .LT. blockSize(1)) THEN
+	IF (ABS(shiftState(1)) .GT. blockSize(1)) THEN
+		state = state
+	ELSE IF (ABS(shiftState(2)) .GT. blockSize(2)) THEN
+		state = state
+	ELSE IF (ABS(shiftState(3)) .GT. blockSize(3)) THEN
+		state = state
+	ELSE
+		PRINT *, "Block scattering!"
 		CALL RANDOM_NUMBER(hitU)
 		IF (hitU < upscatterProb) THEN 
 			WRITE(2) t, energy, state(5)*state(5)/(2.0_8*MASS_N)
+			WRITE(2) state(1), state(2), state(3)
 			STOP
 		!If we don't upscatter, reflect off the block.
 		ELSE IF (shiftState(1) .GT. 0 .AND. shiftState(4) .LT. 0) THEN 
@@ -510,30 +528,12 @@ SUBROUTINE check_upscatter(state, energy, t)
 		ELSE IF (shiftState(1) .LT. 0 .AND. shiftState(4) .GT. 0) THEN
 			CALL reflect(shiftState, (/ -1.0_8, 0.0_8, 0.0_8 /), (/ 0.0_8, 0.0_8, 1.0_8 /))
 			state = (/ MATMUL(invRotation, shiftState(1:3)) + blockPos, shiftState(4:6) /)
-		ELSE 
-			PRINT *, "UHOH"
-		END IF
-	!Same but in y
-	ELSE IF (ABS(shiftState(2)) .LT. blockSize(2)) THEN
-		CALL RANDOM_NUMBER(hitU)
-		IF (hitU < upscatterProb) THEN 
-			WRITE(2) t, energy, state(5)*state(5)/(2.0_8*MASS_N)
-			STOP
 		ELSE IF (shiftState(2) .GT. 0 .AND. shiftState(5) .LT. 0) THEN 
 			CALL reflect(shiftState, (/ 0.0_8, 1.0_8, 0.0_8 /), (/ 0.0_8, 0.0_8, 1.0_8 /))
 			state = (/ MATMUL(invRotation, shiftState(1:3)) + blockPos, shiftState(4:6) /)
 		ELSE IF (shiftState(2) .LT. 0 .AND. shiftState(5) .GT. 0) THEN
 			CALL reflect(shiftState, (/ 0.0_8, -1.0_8, 0.0_8 /), (/ 0.0_8, 0.0_8, 1.0_8 /))
 			state = (/ MATMUL(invRotation, shiftState(1:3)) + blockPos, shiftState(4:6) /)
-		ELSE 
-			PRINT *, "UHOH"
-		END IF
-	!Also z, but there's only one possible z coord
-	ELSE IF (ABS(shiftState(3)) .LT. blockSize(3)) THEN
-		CALL RANDOM_NUMBER(hitU)
-		IF (hitU < upscatterProb) THEN 
-			WRITE(2) t, energy, state(5)*state(5)/(2.0_8*MASS_N)
-			STOP
 		ELSE IF (shiftState(3) .GT. 0 .AND. shiftState(6) .LT. 0) THEN 
 			CALL reflect(shiftState, (/ 0.0_8, 0.0_8, 1.0_8 /), (/ 1.0_8, 0.0_8, 0.0_8 /))
 			state = (/ MATMUL(invRotation, shiftState(1:3)) + blockPos, shiftState(4:6) /)
@@ -541,6 +541,36 @@ SUBROUTINE check_upscatter(state, energy, t)
 			PRINT *, "UHOH"
 		END IF
 	END IF
+	!Same but in y
+!	ELSE IF (ABS(shiftState(2)) .LT. blockSize(2)) THEN
+!		!PRINT *, "Block scattering in y!"
+!		CALL RANDOM_NUMBER(hitU)
+!		IF (hitU < upscatterProb) THEN 
+!			WRITE(2) t, energy, state(5)*state(5)/(2.0_8*MASS_N)	
+!			STOP
+!		ELSE IF (shiftState(2) .GT. 0 .AND. shiftState(5) .LT. 0) THEN 
+!			CALL reflect(shiftState, (/ 0.0_8, 1.0_8, 0.0_8 /), (/ 0.0_8, 0.0_8, 1.0_8 /))
+!			state = (/ MATMUL(invRotation, shiftState(1:3)) + blockPos, shiftState(4:6) /)
+!		ELSE IF (shiftState(2) .LT. 0 .AND. shiftState(5) .GT. 0) THEN
+!			CALL reflect(shiftState, (/ 0.0_8, -1.0_8, 0.0_8 /), (/ 0.0_8, 0.0_8, 1.0_8 /))
+!			state = (/ MATMUL(invRotation, shiftState(1:3)) + blockPos, shiftState(4:6) /)
+!		ELSE 
+!			PRINT *, "UHOH"
+!		END IF
+!	!Also z, but there's only one possible z coord
+!	ELSE IF (ABS(shiftState(3)) .LT. blockSize(3)) THEN
+!		!PRINT *, "Block scattering in z!"
+!		CALL RANDOM_NUMBER(hitU)
+!		IF (hitU < upscatterProb) THEN 
+!			WRITE(2), t, energy, state(5)*state(5)/(2.0_8*MASS_N)
+!			STOP
+!		ELSE IF (shiftState(3) .GT. 0 .AND. shiftState(6) .LT. 0) THEN 
+!			CALL reflect(shiftState, (/ 0.0_8, 0.0_8, 1.0_8 /), (/ 1.0_8, 0.0_8, 0.0_8 /))
+!			state = (/ MATMUL(invRotation, shiftState(1:3)) + blockPos, shiftState(4:6) /)
+!		ELSE 
+!			PRINT *, "UHOH"
+!		END IF
+!	END IF
 	
 END SUBROUTINE check_upscatter
 
