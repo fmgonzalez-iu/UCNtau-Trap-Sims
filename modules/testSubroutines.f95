@@ -246,32 +246,43 @@ SUBROUTINE trackDaggerAndBlock(state)
 	real(kind=4), dimension(50) :: hitE
 	
 	integer :: i, numSteps, nHit
-	
+	LOGICAL :: blockHit, dagHit
+
 	nHit = 0
 		
 	hitT = 0.0_8
 	hitE = 0.0_8
 	
 	t = 0.0_8
-	
+	blockHit = .FALSE.	
+	dagHit = .FALSE.
+
 	settlingTime = 20.0_8 + 50.0_8
 !	PRINT *, "loaded dagger and block!"
 !	PRINT *, state
 	numSteps = settlingTime/dt
 	
 	DO i=1,numSteps,1
+		IF (blockHit) THEN
+			EXIT
+		END IF
 		CALL symplecticStep(state, dt, energy)
-		!PRINT *, state(2)
 		t = t + dt
-		CALL check_upscatter(state, t, energy)
+		CALL check_upscatter(state, t, energy, blockHit)
 	END DO
 	
 !	PRINT *, "Got to end of settling period detection!"
 	DO
+		IF (blockHit) THEN
+			EXIT
+		END IF
 		prevState = state
 		CALL symplecticStep(state, dt, energy)
 		t = t + dt
-		CALL check_upscatter(state,t,energy) 
+		CALL check_upscatter(state, t, energy, blockHit) 
+		IF (blockHit) THEN 
+			EXIT
+		END IF 
 		IF (SIGN(1.0_8, state(2)) .NE. SIGN(1.0_8, prevState(2))) THEN
 			fracTravel = ABS(prevState(2))/(ABS(state(2)) + ABS(prevState(2)))
 			predX = prevState(1) + fracTravel * (state(1) - prevState(1))
@@ -288,6 +299,7 @@ SUBROUTINE trackDaggerAndBlock(state)
 				hitT(nHit) = t - settlingTime
 				hitE(nHit) = state(5)*state(5)/(2.0_8*MASS_N)
 				IF (nHit .EQ. 50) THEN
+					dagHit = .TRUE.
 					EXIT
 				END IF
 				IF (prevState(2) > 0 .AND. prevState(5) < 0) THEN
@@ -302,16 +314,16 @@ SUBROUTINE trackDaggerAndBlock(state)
 			END IF
 			
 			IF (t > 2000) THEN
+				dagHit = .TRUE.
 				EXIT
 			END IF
 		END IF
 		
-		!PRINT *, state
-		
 	END DO
-	
-	PRINT *, "Got to end of dagger detection!"
-	WRITE(1) energy, hitT, hitE
+	IF (dagHit) THEN	
+		PRINT *, "Got to end of dagger detection!"
+		WRITE(1) energy, hitT, hitE
+	END IF
 END SUBROUTINE trackDaggerAndBlock
 
 SUBROUTINE trackEnergyGain(state, energy_start, energy_end, sympT, freq)
@@ -479,7 +491,7 @@ SUBROUTINE calcx0Mesh()
 	END DO
 END SUBROUTINE calcx0Mesh
 
-SUBROUTINE check_upscatter(state, t, energy)
+SUBROUTINE check_upscatter(state, t, energy, blockHit)
 
 	USE constants
 	USE forcesAndPotential
@@ -494,6 +506,7 @@ SUBROUTINE check_upscatter(state, t, energy)
 	real(kind=PREC), dimension(3,3) :: rotation, invRotation
 	real(kind=PREC), dimension(3) :: blockSize
 	real(kind=PREC), dimension(3) :: blockPos
+	LOGICAL :: blockHit
 	
 	upscatterProb = 1.0_8
 	rotation = RESHAPE((/ 0.305229_8, 0.944162_8, 0.124068_8, -0.939275_8, &
@@ -520,7 +533,7 @@ SUBROUTINE check_upscatter(state, t, energy)
 		IF (hitU < upscatterProb) THEN 
 			WRITE(2) t, energy, state(5)*state(5)/(2.0_8*MASS_N)
 			WRITE(2) state(1), state(2), state(3)
-			STOP
+			blockHit = .TRUE.
 		!If we don't upscatter, reflect off the block.
 		ELSE IF (shiftState(1) .GT. 0 .AND. shiftState(4) .LT. 0) THEN 
 			CALL reflect(shiftState, (/ 1.0_8, 0.0_8, 0.0_8 /), (/ 0.0_8, 0.0_8, 1.0_8 /))

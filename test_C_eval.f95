@@ -42,7 +42,7 @@ PROGRAM track
 	WRITE (rankString, "(I0)") rank
 	
 	fName = TRIM(fName) // TRIM(rankString)
-	
+		
 	PRINT *, fName
 	OPEN(UNIT=1,FILE=fName, FORM='UNFORMATTED')
 	
@@ -59,7 +59,7 @@ PROGRAM track
 !	minU = -2.4283243003838247e-26_8
 	minU = -2.390245661413933e-26_8
 	
-	allocate(states(ntraj,6))
+	ALLOCATE(states(ntraj,6))
 		
 	PI=4.0e0_8*ATAN(1.0e0_8)
 	a(1)=.5153528374311229364e0_8
@@ -89,7 +89,7 @@ PROGRAM track
 		PRINT *, "Error! The requested length of seed is too long"
 		CALL EXIT(0)
 	END IF
-	PRINT *, "called a seed!"
+!	PRINT *, "called a seed!"
 	!I'm not going to care about proper types since it's just for seed values
 	rngSeed(1) = 4434
 	DO i=2,seedLen,1
@@ -108,6 +108,7 @@ PROGRAM track
 	!PRINT *, states(1,:)
 	!PRINT *, "called a random point trap"
 	
+!	PRINT *, trajPerWorker*rank+1, trajPerWorker*(rank+1)
 	DO i=trajPerWorker*rank+1,trajPerWorker*(rank+1),1
 !		sympT = 0.0_8
 !       CALL trackAndPrint(states(i,:))
@@ -116,18 +117,18 @@ PROGRAM track
 !		PRINT *, rank, i, energy_start, energy_end, (energy_end - energy_start)/energy_start
 !		PRINT *, rank, i, (energy_end - energy_start)/energy_start
 		IF (IARGC() .EQ. 3) THEN
-		!	PRINT *, "starting run without al block"
+!			PRINT *, "Starting run without block!"
 			CALL trackDaggerHitTime(states(i, :))
 		ELSE IF (IARGC() .EQ. 4) THEN
-		!	PRINT *, "Starting run with Aluminum block!"
+!			PRINT *, "Starting run with Aluminum block!"
 			CALL trackDaggerAndBlock(states(i, :))
 		ELSE
-			PRINT *, "Error! something happened with iarg"
-		!	CALL MPI_FINALIZE(ierr)
+!			PRINT *, "Something wrong with iargc!"
+			CALL MPI_FINALIZE(ierr)
 			CALL EXIT(0)
 		END IF 
 !		CALL trackDaggerHitTimeFixedEff(states(i, :))
-	!END DO
+	END DO
     
 !    CALL trackDaggerHitTime(states(ntraj, :))
     
