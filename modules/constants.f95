@@ -2,10 +2,10 @@
 
 MODULE constants
 	IMPLICIT NONE
-	real(kind=PREC) :: PI
-	real(kind=PREC), dimension(4) :: a
-	real(kind=PREC), dimension(4) :: b
-	real(kind=PREC) :: dt, liptime
-	integer :: nsep
+	REAL(KIND=PREC) :: PI
+	REAL(KIND=PREC), DIMENSION(4) :: a
+	REAL(KIND=PREC), DIMENSION(4) :: b
+	REAL(KIND=PREC) :: dt, liptime
+	INTEGER :: nsep
 	SAVE
 END MODULE

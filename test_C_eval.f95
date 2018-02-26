@@ -1,34 +1,34 @@
 #include "modules/constants.h"
 
 PROGRAM track
-	USE mpi
+!	USE mpi
 	USE constants
 	USE testSubroutines
 	USE forcesAndPotential
 	USE trackGeometry
 
 	IMPLICIT NONE
-	real(kind=PREC) :: x, y, z, fx, fy, fz, totalU, energy, sympT
-	real(kind=PREC) :: energy_start, energy_end, maxEgain
-	real(kind=PREC) :: freq, height
-	real(kind=PREC), allocatable :: states(:,:)
-	character(len=256) :: arg
-	character(len=256) :: fName, fName2
-	character(len=256) :: rankString
-	integer :: i, j, k
-	integer :: seedLen
-	integer, dimension(32) :: rngSeed
-	integer :: rank, size, tag, next, from, ierr, workerIt, trajPerWorker
-	integer :: ntraj
+	REAL(KIND=PREC) :: x, y, z, fx, fy, fz, totalU, energy, sympT
+	REAL(KIND=PREC) :: energy_start, energy_end, maxEgain
+	REAL(KIND=PREC) :: freq, height
+	REAL(KIND=PREC), ALLOCATABLE :: states(:,:)
+	CHARACTER(LEN=256) :: arg
+	CHARACTER(LEN=256) :: fName, fName2
+	CHARACTER(LEN=256) :: rankString
+	INTEGER :: i, j, k
+	INTEGER :: seedLen
+	INTEGER, DIMENSION(32) :: rngSeed
+	INTEGER :: rank, size, tag, next, from, ierr, workerIt, trajPerWorker
+	INTEGER :: ntraj
 
-	CALL MPI_INIT(ierr)
-	CALL MPI_COMM_RANK(MPI_COMM_WORLD, rank, ierr)
-	CALL MPI_COMM_SIZE(MPI_COMM_WORLD, size, ierr)
+!	CALL MPI_INIT(ierr)
+!	CALL MPI_COMM_RANK(MPI_COMM_WORLD, rank, ierr)
+!	CALL MPI_COMM_SIZE(MPI_COMM_WORLD, size, ierr)
 	!rank = 2
 	IF (IARGC() .NE. 4 .AND. IARGC() .NE. 3) THEN
 		PRINT *, "Error! Not enough or too many arguments!"
 		PRINT *, "timestep n_traj OUTFILE (OUTFILE2)"
-		CALL MPI_FINALIZE(ierr)
+!		CALL MPI_FINALIZE(ierr)
 		CALL EXIT(0)
 	END IF
 	
@@ -58,6 +58,7 @@ PROGRAM track
 	
 !	minU = -2.4283243003838247e-26_8
 	minU = -2.390245661413933e-26_8
+	minU = -2.390352484438862e-26_8 !For lambda = 0.05114, brem=1.35
 	
 	ALLOCATE(states(ntraj,6))
 		
@@ -103,7 +104,9 @@ PROGRAM track
 !	END DO
 			
 	DO i=1,ntraj,1
-		CALL randomPointTrap(states(i,1), states(i,2), states(i,3), states(i,4), states(i,5), states(i,6))
+		!CALL randomPointTrap(states(i,1), states(i,2), states(i,3), states(i,4), states(i,5), states(i,6))
+		CALL randomPointTrapOptimum(states(i,1), states(i,2), states(i,3),&
+		 states(i,4), states(i,5), states(i,6))
 	END DO
 	!PRINT *, states(1,:)
 	!PRINT *, "called a random point trap"
@@ -124,7 +127,7 @@ PROGRAM track
 			CALL trackDaggerAndBlock(states(i, :))
 		ELSE
 !			PRINT *, "Something wrong with iargc!"
-			CALL MPI_FINALIZE(ierr)
+!			CALL MPI_FINALIZE(ierr)
 			CALL EXIT(0)
 		END IF 
 !		CALL trackDaggerHitTimeFixedEff(states(i, :))
@@ -156,6 +159,6 @@ PROGRAM track
 !	CALL trackDaggerHitTime(states(ntraj, :))
 	
 	
-	CALL MPI_FINALIZE(ierr)
+!	CALL MPI_FINALIZE(ierr)
 	
 END PROGRAM track

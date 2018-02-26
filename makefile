@@ -1,10 +1,10 @@
-F95=ftn
-FFLAGS=-cpp -O3 -I/N/u/frangonz/BigRed2/libraries/include/
+F95=gfortran
+FFLAGS=-cpp -g -I/usr/local/include
 VPATH=modules
 MODOBJ=constants.o forcesAndPotential.o symplecticInt.o trackGeometry.o testSubroutines.o
 #COBJ=modules/fields_fortran_dan.o modules/fields_nate.o
 COBJ=fields_nate.o
-LFLAGS=-L/N/u/frangonz/BigRed2/libraries/lib -lnlopt -lm
+LFLAGS=-L/usr/local/lib -lm
 
 #all: symplecticInt trajGen henonHeiles symplecticIntNoPert symplecticIntNoPertEscape #symplecticIntPertEscapeFieldStrength biasedVsqDescent
 

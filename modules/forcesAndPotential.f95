@@ -7,9 +7,9 @@ CONTAINS
 
 SUBROUTINE totalPotential(x, y, z, totalU, t)
 	IMPLICIT NONE
-	real(kind=PREC), intent(in) :: x, y, z
-	real(kind=PREC), intent(out) :: totalU
-	real(kind=PREC), optional, intent(in) :: t
+	REAL(KIND=PREC), INTENT(IN) :: x, y, z
+	REAL(KIND=PREC), INTENT(OUT) :: totalU
+	REAL(KIND=PREC), OPTIONAL, INTENT(IN) :: t
 	
 	IF(PRESENT(t)) THEN
 		CALL potential(x, y, z, totalU, t)
@@ -21,10 +21,10 @@ END SUBROUTINE totalPotential
 
 SUBROUTINE totalForce(x, y, z, fx, fy, fz, totalU, t, freq)
 	IMPLICIT NONE
-	real(kind=PREC), intent(in) :: x, y, z
-	real(kind=PREC), intent(out) :: fx, fy, fz
-	real(kind=PREC), intent(out) :: totalU
-	real(kind=PREC), optional, intent(in) :: t, freq
+	REAL(KIND=PREC), INTENT(IN) :: x, y, z
+	REAL(KIND=PREC), INTENT(OUT) :: fx, fy, fz
+	REAL(KIND=PREC), INTENT(OUT) :: totalU
+	REAL(KIND=PREC), OPTIONAL, INTENT(IN) :: t, freq
 	
 	IF(PRESENT(t)) THEN
 		CALL force(x, y, z, fx, fy, fz, totalU, t, freq)
@@ -52,10 +52,10 @@ END SUBROUTINE totalForce
 
 SUBROUTINE calcEnergy(state, energy, t)
 	IMPLICIT NONE
-	real(kind=PREC), dimension(6), intent(in) :: state
-	real(kind=PREC), intent(out) :: energy
-	real(kind=PREC), optional, intent(in) :: t
-	real(kind=PREC) :: totalU
+	REAL(KIND=PREC), DIMENSION(6), INTENT(IN) :: state
+	REAL(KIND=PREC), INTENT(OUT) :: energy
+	REAL(KIND=PREC), OPTIONAL, INTENT(IN) :: t
+	REAL(KIND=PREC) :: totalU
 	
 	IF(PRESENT(t)) THEN
 		CALL totalPotential(state(1), state(2), state(3), totalU, t)

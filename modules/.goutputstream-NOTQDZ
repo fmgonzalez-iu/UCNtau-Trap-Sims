@@ -1,0 +1,37 @@
+#include "constants.h"
+
+MODULE Al_block
+
+CONTAINS
+
+SUBROUTINE check_upscatter(state)
+
+	USE constants
+	USE forcesAndPotential
+	USE ISO_FORTRAN_ENV, ONLY : ERROR_UNIT
+	IMPLICIT NONE
+	real(kind=PREC), intent(inout), dimension(6) :: state
+	
+	real(kind=PREC), dimension(3) :: blocksize
+	real(kind=PREC), dimension(3) :: blockor
+	real(kind=PREC), dimension(3) :: blockpos
+	
+	
+	!Set size, orientation, position of block
+	blocksize(1) = 0.0250_8
+	blocksize(2) = 0.0250_8
+	blocksize(3) = 0.0125_8
+	
+	blockor(1) = 0.464905_8
+	blockor(2) = 0.176371_8
+	blockor(3) = PI / 4.0_8
+	
+	blockpos(1) = 0.2207_8
+	blockpos(2) = 0.1270_8
+	blockpos(3) = -1.4431_8
+	
+	!Transform block position using the requisite angles
+	
+END SUBROUTINE check_upscatter
+
+END MODULE

@@ -7,8 +7,8 @@ CONTAINS
 SUBROUTINE compPots()
 	USE forcesAndPotential
 	IMPLICIT NONE
-	real(kind=PREC) :: x, y, z, fx, fy, fz, totalU
-	integer :: i
+	REAL(KIND=PREC) :: x, y, z, fx, fy, fz, totalU
+	INTEGER :: i
 	
 	z = -1.49_8
 	x = 0.1_8
@@ -20,27 +20,34 @@ SUBROUTINE compPots()
 END SUBROUTINE compPots
 
 SUBROUTINE zOffDipCalc(t, z)
-	real(kind=PREC), intent(in) :: t
-	real(kind=PREC), intent(out) :: z
+	REAL(KIND=PREC), INTENT(IN) :: t
+	REAL(KIND=PREC), INTENT(OUT) :: z
 	
-	integer :: nDips = 4
-	real(kind=PREC) :: speed
-	real(kind=PREC), dimension(4) :: dipHeights
-	real(kind=PREC), dimension(4) :: dipEnds
+	INTEGER :: nDips = 4
+	REAL(KIND=PREC) :: speed
+	REAL(KIND=PREC), DIMENSION(4) :: dipHeights
+	REAL(KIND=PREC), DIMENSION(4) :: dipEnds
+	REAL(KIND=PREC) :: holdT
+	INTEGER :: i
 	
-	integer :: i
-	
-!	dipHeights = (/0.49, 0.380, 0.250, 0.180, 0.140, 0.110, 0.080, 0.060, 0.040, 0.010/)
+	holdT = 900
+    
+!    dipHeights = (/0.49, 0.380, 0.250, 0.180, 0.140, 0.110, 0.080, 0.060, 0.040, 0.010/) !9 dip
+!    dipHeights = (/0.49, 0.250, 0.49, 0.380, 0.250, 0.180, 0.140, 0.110, 0.080, 0.060, 0.040, 0.010/) !9 dip PSE
 	dipHeights = (/0.49_8, 0.380_8, 0.250_8, 0.010_8 /)
-!	dipEnds =     (/0.0,  40.0,  80.0,  100.0, 120.0, 140.0, 160.0, 180.0, 200.0, 300.0/)
-	dipEnds =     (/0.0_8,  40.0_8, 60.0_8,  210.0_8 /)
+!    dipHeights = (/0.49_8, 0.380_8, 0.250_8, 0.01_8/)
+!    dipEnds =     (/0.0,  40.0,  80.0,  100.0, 120.0, 140.0, 160.0, 180.0, 200.0, 300.0/) !9 dip
+!    dipEnds =     (/0.0_8,  200.0_8,  200.0+holdT, 200.0+holdT+20.0, 200.0+holdT+40.0, 200.0+holdT+50.0, &
+!                    200.0+holdT+60.0, 200.0+holdT+70.0, 200.0+holdT+80.0, 200.0+holdT+90.0, &
+!                    200.0+holdT+100.0, 200.0+holdT+120.0/) !9 dip PSE
+    dipEnds =     (/0.0_8,  40.0_8, 60.0_8,  210.0_8 /)
+!    dipEnds =     (/0.0_8,  40.0_8,  400.0_8, 500.0_8/)
+
 	
 	IF (t > dipEnds(nDips)) THEN
 		z = 0.01
 		RETURN
 	END IF
-	
-	speed = 0.49_8/13.0_8
 	
 	DO i=1,nDips,1
 		IF (dipEnds(i) > t) THEN
@@ -48,20 +55,22 @@ SUBROUTINE zOffDipCalc(t, z)
 		END IF
 	END DO
 	
+	speed = SIGN(1.0_8, dipHeights(i-1) - dipHeights(i))*0.49_8/13.0_8
+		
 	z = dipHeights(i-1) - speed*(t-dipEnds(i-1))
 	
-	IF (z < dipHeights(i)) THEN
-		z = dipHeights(i)
+    IF ((speed > 0 .AND. z < dipHeights(i)) .OR. (speed < 0 .AND. z > dipHeights(i))) THEN
+        z = dipHeights(i)
 	END IF
 END SUBROUTINE zOffDipCalc
 
 SUBROUTINE reflect(state, norm, tang)
 	USE trackGeometry
 	USE constants
-	real(kind=PREC), dimension(6), intent(inout) :: state
-	real(kind=PREC), dimension(3), intent(in) :: norm, tang
-	real(kind=PREC) :: u1, u2, theta, phi, pN, pT, pTprime, pLen, pTarget
-	real(kind=PREC), dimension(3) :: tangPrime, newPdir
+	REAL(KIND=PREC), DIMENSION(6), INTENT(INOUT) :: state
+	REAL(KIND=PREC), DIMENSION(3), INTENT(IN) :: norm, tang
+	REAL(KIND=PREC) :: u1, u2, theta, phi, pN, pT, pTprime, pLen, pTarget
+	REAL(KIND=PREC), DIMENSION(3) :: tangPrime, newPdir
 	
 	pTarget = SQRT(state(4)**2 + state(5)**2 + state(6)**2)
 	
@@ -88,18 +97,118 @@ SUBROUTINE reflect(state, norm, tang)
 	state(6) = state(6) * pTarget/pLen
 END SUBROUTINE reflect
 
+FUNCTION WAVENUM(ePerp, u) RESULT(ret)
+    COMPLEX, INTENT(IN) :: ePerp, u
+    COMPLEX :: ret
+    ret = SQRT((2*(MASS_N/HBAR)/HBAR)*(ePerp - u))
+END FUNCTION WAVENUM
+!std::complex<double> wavenum(double ePerp, std::complex<double> u) {
+!    return std::sqrt((2*MASS_N/(HBAR*HBAR))*(ePerp - u));
+!}
+
+FUNCTION GAMMAK(kn, knm1) RESULT(ret)
+    COMPLEX, INTENT(IN) :: kn, knm1
+    COMPLEX :: ret
+    ret = knm1/kn
+END FUNCTION GAMMAK
+!std::complex<double> gamma(std::complex<double> kn, std::complex<double> knm1) {
+!    return knm1/kn;
+!}
+
+FUNCTION M(kn, knm1, z) RESULT(ret)
+    COMPLEX, INTENT(IN) :: kn, knm1, z
+    COMPLEX, DIMENSION(2,2) :: ret
+    ret(1,1) = (1.0/2.0)*(1.0 + GAMMAK(kn,knm1))*EXP((0.0,1.0)*(knm1-kn)*z);
+    ret(1,2) = (1.0/2.0)*(1.0 - GAMMAK(kn,knm1))*EXP(-(0.0,1.0)*(knm1+kn)*z);
+    ret(2,1) = (1.0/2.0)*(1.0 - GAMMAK(kn,knm1))*EXP((0.0,1.0)*(knm1+kn)*z);
+    ret(2,2) = (1.0/2.0)*(1.0 + GAMMAK(kn,knm1))*EXP(-(0.0,1.0)*(knm1-kn)*z);
+END FUNCTION M
+!std::vector<std::complex<double>> m(std::complex<double> kn, std::complex<double> knm1, double z) {
+!    std::vector<std::complex<double>> res = {std::complex<double>(0,0), std::complex<double>(0,0), std::complex<double>(0,0), std::complex<double>(0,0)};
+!    res[0] = (1.0/2.0)*(1.0 + gamma(kn,knm1))*std::exp(std::complex<double>(0,1)*(knm1-kn)*z);
+!    res[1] = (1.0/2.0)*(1.0 - gamma(kn,knm1))*std::exp(-std::complex<double>(0,1)*(knm1+kn)*z);
+!    res[2] = (1.0/2.0)*(1.0 - gamma(kn,knm1))*std::exp(std::complex<double>(0,1)*(knm1+kn)*z);
+!    res[3] = (1.0/2.0)*(1.0 + gamma(kn,knm1))*std::exp(-std::complex<double>(0,1)*(knm1-kn)*z);
+!    return res;
+!}
+
+SUBROUTINE absorb(ePerp, prob)
+    USE constants
+    REAL(KIND=PREC), INTENT(IN) :: ePerp
+    REAL(KIND=PREC), INTENT(OUT) :: prob
+    REAL(KIND=8) :: voxide, woxide, vboron, wboron, vznd, wzns
+    COMPLEX, DIMENSION(4) :: pots
+    COMPLEX, DIMENSION(4) :: zs
+    COMPLEX, DIMENSION(2,2) :: mbar
+    COMPLEX :: ePerp_c
+    INTEGER :: i
+    
+    ePerp_c = CMPLX(ePerp, 0.0)
+    
+    voxide = (2*PI*((HBAR/MASS_N)*HBAR))*ABORON*NBORONB2O3
+    voxide = voxide + (2*PI*((HBAR/MASS_N)*HBAR))*AOXYGEN*NOXYGENB2O3
+    woxide = (HBAR/2)*NBORONB2O3*2200*SIGMABORON + (HBAR/2)*NOXYGENB2O3*SIGMAOXYGEN
+    vboron = (2*PI*((HBAR/MASS_N)*HBAR))*ABORON*NBORON
+    wboron = (HBAR/2)*NBORON*2200*SIGMABORON
+    vzns = (2*PI*((HBAR/MASS_N)*HBAR))*AZINC*NZINC
+    vzns = vzns + (2*PI*((HBAR/MASS_N)*HBAR))*ASULFUR*NSULFUR
+    wzns = (HBAR/2)*NZINC*SIGMAZINC + (HBAR/2)*NSULFUR*SIGMASULFUR
+    
+    pots(1) = (0,0)
+    pots(2) = CMPLX(voxide, -woxide)
+    pots(3) = CMPLX(vboron, -wboron)
+    pots(4) = CMPLX(vzns, -wzns)
+    zs(1) = (0.0, 0.0)
+    !zs(2) = (3.5e-9, 0.0)
+    zs(2) = (0.0, 0.0)
+    !zs(3) = (3.5e-9 + 5.0e-9)
+    zs(3) = (20e-9)
+    zs(4) = (10000e-9)
+    mbar(1,1) = (1, 0)
+    mbar(1,2) = (0, 0)
+    mbar(2,1) = (0, 0)
+    mbar(2,2) = (1, 0)
+    
+    DO i = 4,2,-1
+        mbar = MATMUL(mbar, M(WAVENUM(ePerp_c, pots(i)), WAVENUM(ePerp_c, pots(i-1)), zs(i-1)))
+    END DO
+    
+    prob = 1.0_8 - REALPART(CONJG(-mbar(2,1)/mbar(2,2))*(-mbar(2,1)/mbar(2,2)))
+END SUBROUTINE absorb
+!double absorbProbQuantOxide(double ePerp, double thickOxide, double thickBoron) {
+!    const double voxide = (2*M_PI*(HBAR*HBAR)/MASS_N)*ABORON*NBORONB2O3 + (2*M_PI*(HBAR*HBAR)/MASS_N)*AOXYGEN*NOXYGENB2O3;
+!    const double woxide = (HBAR/2)*NBORONB2O3*SIGMABORON + (HBAR/2)*NOXYGENB2O3*SIGMAOXYGEN;
+!    const double vboron = (2*M_PI*(HBAR*HBAR)/MASS_N)*ABORON*NBORON;
+!    const double wboron = (HBAR/2)*NBORON*SIGMABORON;
+!    const double vzns = (2*M_PI*(HBAR*HBAR)/MASS_N)*AZINC*NZINC + (2*M_PI*(HBAR*HBAR)/MASS_N)*ASULFUR*NSULFUR;
+!    const double wzns = (HBAR/2)*NZINC*SIGMAZINC + (HBAR/2)*NSULFUR*SIGMASULFUR;
+!    
+!    std::vector<std::complex<double>> pots = {std::complex<double>(0, 0),
+!                                              std::complex<double>(voxide, -woxide),
+!                                              std::complex<double>(vboron, -wboron),
+!                                              std::complex<double>(vzns, -wzns)};
+!    std::vector<std::complex<double>> mbar = {std::complex<double>(1,0), std::complex<double>(0,0), std::complex<double>(0,0), std::complex<double>(1,0)};
+!    std::vector<double> zs = {0.0, thickOxide*1e-9, thickOxide*1e-9 + thickBoron*1e-9, 10000e-9};
+!    
+!    for(int i = pots.size()-1; i > 0; i--) {
+!        mbar = matmul(mbar, m(k(ePerp, pots[i]), k(ePerp, pots[i-1]), zs[i-1]));
+!    }
+!    
+!    return 1.0 - (std::conj(-mbar[2]/mbar[3])*-mbar[2]/mbar[3]).real();
+!}
+
 SUBROUTINE trackDaggerHitTime(state)
 	USE symplecticInt
 	USE constants
 	USE forcesAndPotential
 	IMPLICIT NONE
-	real(kind=PREC), dimension(6), intent(inout) :: state
-	real(kind=PREC), dimension(6) :: prevState
+	REAL(KIND=PREC), dimension(6), intent(inout) :: state
+	REAL(KIND=PREC), dimension(6) :: prevState
 
-	real(kind=PREC) :: t, fracTravel, predX, predZ, energy, zOff, zeta
-	real(kind=PREC) :: settlingTime
-	real(kind=4), dimension(50) :: hitT
-	real(kind=4), dimension(50) :: hitE
+	REAL(KIND=PREC) :: t, fracTravel, predX, predZ, energy, zOff, zeta
+	REAL(KIND=PREC) :: settlingTime
+	REAL(KIND=4), dimension(50) :: hitT
+	REAL(KIND=4), dimension(50) :: hitE
 	
 	integer :: i, numSteps, nHit
 	
@@ -110,6 +219,7 @@ SUBROUTINE trackDaggerHitTime(state)
 	
 	t = 0.0_8
 	
+	!settlingTime = 20.0_8 + 200.0_8
 	settlingTime = 20.0_8 + 50.0_8
 	
 	numSteps = settlingTime/dt
@@ -117,9 +227,7 @@ SUBROUTINE trackDaggerHitTime(state)
 		CALL symplecticStep(state, dt, energy)
 		t = t + dt
 	END DO
-	
-	!PRINT *, "got to end of settling time!"
-	
+		
 	DO
 		prevState = state
 		CALL symplecticStep(state, dt, energy)
@@ -135,55 +243,85 @@ SUBROUTINE trackDaggerHitTime(state)
 			ELSE
 				zeta = 1.0_8 - SQRT(predX**2 + (ABS(predZ - zOff) - 0.5_8)**2)
 			END IF
-			IF (ABS(predX) < .2 .AND. zeta > 0.0_8 .AND. predZ < (-1.5_8 + zOff + 0.2_8)) THEN
-				nHit = nHit + 1
-				hitT(nHit) = t - settlingTime
-				hitE(nHit) = state(5)*state(5)/(2.0_8*MASS_N)
-				IF (nHit .EQ. 50) THEN
-					EXIT
-				END IF
-				IF (prevState(2) > 0 .AND. prevState(5) < 0) THEN
-					CALL reflect(prevState, (/0.0_8, 1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
-					state = prevState
-				ELSE IF (prevState(2) < 0 .AND. prevState(5) > 0) THEN
-					CALL reflect(prevState, (/0.0_8, -1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
-					state = prevState
-				ELSE
-					PRINT *, "UHOH"
-				END IF
-!				WRITE(1) t - (20.0_8 + 50.0_8), predX, predZ - zOff
-!				EXIT
-			END IF
+			!TD offset from central axis: 6" ~0.1524m
+           IF (predX > -0.3524_8 .AND. predX < 0.0476_8 .AND. zeta > 0.0_8 .AND. predZ < (-1.5_8 + zOff + 0.2_8)) THEN
+                nHit = nHit + 1
+                hitT(nHit) = t - settlingTime
+                hitE(nHit) = state(5)*state(5)/(2.0_8*MASS_N)
+                IF (nHit .EQ. 50) THEN
+                    EXIT
+                END IF
+                IF (prevState(2) > 0 .AND. prevState(5) < 0) THEN
+                    CALL reflect(prevState, (/0.0_8, 1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
+                    state = prevState
+                ELSE IF (prevState(2) < 0 .AND. prevState(5) > 0) THEN
+                    CALL reflect(prevState, (/0.0_8, -1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
+                    state = prevState
+                ELSE
+                    PRINT *, "UHOH"
+                END IF
+!                WRITE(1) t - (20.0_8 + 50.0_8), predX, predZ - zOff
+!                EXIT
+            ELSE IF (predZ >= (-1.5_8 + zOff + 0.2_8) .AND. &
+                    predZ < (-1.5_8 + zOff + 0.2_8 + 0.14478_8) .AND. &
+                    ABS(predX + 0.1524_8) < (0.40_8 + 2.0179_8*(predZ + 1.5_8 - zOff - 0.2_8))/2.0_8) THEN
+                IF (prevState(2) > 0 .AND. prevState(5) < 0) THEN
+                    CALL reflect(prevState, (/0.0_8, 1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
+                    state = prevState
+                ELSE IF (prevState(2) < 0 .AND. prevState(5) > 0) THEN
+                    CALL reflect(prevState, (/0.0_8, -1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
+                    state = prevState
+                END IF
+!                PRINT *, "BOUNCE LOWER"
+!                PRINT *, predX, predZ, zOff
+            ELSE IF (predZ >= (-1.5_8 + zOff + 0.2_8 + 0.14478_8) .AND. &
+                    predZ < (-1.5_8 + zOff + 0.2_8 + 0.2667_8) .AND. &
+                    ABS(predX + 0.1524_8) < 0.69215_8/2.0_8) THEN
+                IF (prevState(2) > 0 .AND. prevState(5) < 0) THEN
+                    CALL reflect(prevState, (/0.0_8, 1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
+                    state = prevState
+                ELSE IF (prevState(2) < 0 .AND. prevState(5) > 0) THEN
+                    CALL reflect(prevState, (/0.0_8, -1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
+                    state = prevState
+                END IF
+!                PRINT *, "BOUNCE UPPER"
+!                PRINT *, predX, predZ, zOff
+			END IF			
 			
 			IF (t > 2000) THEN
 				EXIT
 			END IF
 		END IF
 	END DO
-	!PRINT *, "Got to end of dagger detection!"
-	
 	WRITE(1) energy, hitT, hitE
 END SUBROUTINE trackDaggerHitTime
 
-SUBROUTINE trackDaggerHitTimeFixedEff(state)
+SUBROUTINE fixedEffDaggerHitTime(state)
 	USE symplecticInt
 	USE constants
 	USE forcesAndPotential
 	IMPLICIT NONE
-	real(kind=PREC), dimension(6), intent(inout) :: state
-	real(kind=PREC), dimension(6) :: prevState
+	REAL(KIND=PREC), DIMENSION(6), INTENT(INOUT) :: state
+	REAL(KIND=PREC), DIMENSION(6) :: prevState
 
-	real(kind=PREC) :: t, fracTravel, predX, predZ, energy, zOff, zeta, hitU
-	real(kind=PREC) :: settlingTime
+	REAL(KIND=PREC) :: t, fracTravel, predX, predZ, energy, zOff, zeta
+	REAL(KIND=PREC) :: settlingTime
+    
+    REAL(KIND=PREC) :: absProb, absU, deathTime
 
-	integer :: i, numSteps, nHit
-	
-	nHit = 0
+	INTEGER :: i, numSteps, nHit, nHitHouseLow, nHitHouseHigh
 	
 	t = 0.0_8
+	nHit = 0
+    nHitHouseLow = 0
+	nHitHouseHigh = 0
 	
+	!settlingTime = 20.0_8 + 200.0_8
 	settlingTime = 20.0_8 + 50.0_8
 	
+    CALL RANDOM_NUMBER(deathTime)
+    deathTime = -877.7*LOG(deathTime)
+
 	numSteps = settlingTime/dt
 	DO i=1,numSteps,1
 		CALL symplecticStep(state, dt, energy)
@@ -205,12 +343,17 @@ SUBROUTINE trackDaggerHitTimeFixedEff(state)
 			ELSE
 				zeta = 1.0_8 - SQRT(predX**2 + (ABS(predZ - zOff) - 0.5_8)**2)
 			END IF
-			IF (ABS(predX) < .2 .AND. zeta > 0.0_8 .AND. predZ < (-1.5_8 + zOff + 0.2_8)) THEN
-                CALL RANDOM_NUMBER(hitU)
-                IF (hitU < 0.155) THEN
-                    WRITE(1) t - settlingTime, energy, state(5)*state(5)/(2.0_8*MASS_N)
+			!TD offset from central axis: 6" ~0.1524m
+            IF (predX > -0.3524_8 .AND. predX < 0.0476_8 .AND. zeta > 0.0_8 .AND. predZ < (-1.5_8 + zOff + 0.2_8)) THEN
+                nHit = nHit + 1
+				CALL absorb(state(5)*state(5)/(2.0_8*MASS_N), absProb)
+                CALL RANDOM_NUMBER(absU)
+                IF (absU .LT. absProb) THEN
+                    WRITE(1) t - settlingTime, energy, state(5)*state(5)/(2.0_8*MASS_N), &
+					predX, 0.0_8, predZ, zOff, nHit, nHitHouseLow, nHitHouseHigh
                     EXIT
                 END IF
+                
 				IF (prevState(2) > 0 .AND. prevState(5) < 0) THEN
 					CALL reflect(prevState, (/0.0_8, 1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
 					state = prevState
@@ -220,16 +363,35 @@ SUBROUTINE trackDaggerHitTimeFixedEff(state)
 				ELSE
 					PRINT *, "UHOH"
 				END IF
-!				WRITE(1) t - (20.0_8 + 50.0_8), predX, predZ - zOff
-!				EXIT
-			END IF
-			
-			IF (t > 2000) THEN
-				EXIT
+            ELSE IF (predZ >= (-1.5_8 + zOff + 0.2_8) .AND. &
+                    predZ < (-1.5_8 + zOff + 0.2_8 + 0.14478_8) .AND. &
+                    ABS(predX + 0.1524_8) < (0.40_8 + 2.0179_8*(predZ + 1.5_8 - zOff - 0.2_8))/2.0_8) THEN
+                IF (prevState(2) > 0 .AND. prevState(5) < 0) THEN
+                    CALL reflect(prevState, (/0.0_8, 1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
+                    state = prevState
+                ELSE IF (prevState(2) < 0 .AND. prevState(5) > 0) THEN
+                    CALL reflect(prevState, (/0.0_8, -1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
+                    state = prevState
+                END IF
+                nHitHouseLow = nHitHouseLow + 1
+            ELSE IF (predZ >= (-1.5_8 + zOff + 0.2_8 + 0.14478_8) .AND. &
+                    predZ < (-1.5_8 + zOff + 0.2_8 + 0.2667_8) .AND. &
+                    ABS(predX + 0.1524_8) < 0.69215_8/2.0_8) THEN
+                IF (prevState(2) > 0 .AND. prevState(5) < 0) THEN
+                    CALL reflect(prevState, (/0.0_8, 1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
+                    state = prevState
+                ELSE IF (prevState(2) < 0 .AND. prevState(5) > 0) THEN
+                    CALL reflect(prevState, (/0.0_8, -1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
+                    state = prevState
+                END IF
+                nHitHouseHigh = nHitHouseHigh + 1
+            END IF
+            IF (t-settlingTime > deathTime) THEN
+                EXIT
 			END IF
 		END IF
 	END DO
-END SUBROUTINE trackDaggerHitTimeFixedEff
+END SUBROUTINE fixedEffDaggerHitTime
 
 SUBROUTINE trackDaggerAndBlock(state)
 
@@ -237,15 +399,15 @@ SUBROUTINE trackDaggerAndBlock(state)
 	USE constants
 	USE forcesAndPotential
 	IMPLICIT NONE
-	real(kind=PREC), dimension(6), intent(inout) :: state
-	real(kind=PREC), dimension(6) :: prevState
+	REAL(KIND=PREC), DIMENSION(6), INTENT(INOUT) :: state
+	REAL(KIND=PREC), DIMENSION(6) :: prevState
 
-	real(kind=PREC) :: t, fracTravel, predX, predZ, energy, zOff, zeta, hitU
-	real(kind=PREC) :: settlingTime
-	real(kind=4), dimension(50) :: hitT
-	real(kind=4), dimension(50) :: hitE
+	REAL(KIND=PREC) :: t, fracTravel, predX, predZ, energy, zOff, zeta, hitU
+	REAL(KIND=PREC) :: settlingTime
+	REAL(KIND=4), DIMENSION(50) :: hitT
+	REAL(KIND=4), DIMENSION(50) :: hitE
 	
-	integer :: i, numSteps, nHit
+	INTEGER :: i, numSteps, nHit
 	LOGICAL :: blockHit, dagHit
 
 	nHit = 0
@@ -321,7 +483,7 @@ SUBROUTINE trackDaggerAndBlock(state)
 		
 	END DO
 	IF (dagHit) THEN	
-		PRINT *, "Got to end of dagger detection!"
+		!PRINT *, "Got to end of dagger detection!"
 		WRITE(1) energy, hitT, hitE
 	END IF
 END SUBROUTINE trackDaggerAndBlock
@@ -331,12 +493,12 @@ SUBROUTINE trackEnergyGain(state, energy_start, energy_end, sympT, freq)
 	USE constants
 	USE forcesAndPotential
 	IMPLICIT NONE
-	real(kind=PREC), dimension(6), intent(inout) :: state
-	real(kind=PREC), intent(out) :: energy_start, energy_end
-	real(kind=PREC), optional, intent(inout) :: sympT
-	real(kind=PREC), optional, intent(in) :: freq
-    real(kind=PREC) :: eta, prevEta, t, energy, t_end
-	integer :: i, numSteps, triggered, rising
+	REAL(KIND=PREC), DIMENSION(6), INTENT(INOUT) :: state
+	REAL(KIND=PREC), INTENT(OUT) :: energy_start, energy_end
+	REAL(KIND=PREC), OPTIONAL, INTENT(INOUT) :: sympT
+	REAL(KIND=PREC), OPTIONAL, INTENT(IN) :: freq
+    REAL(KIND=PREC) :: eta, prevEta, t, energy, t_end
+	INTEGER :: i, numSteps, triggered, rising
     
     t = 0.0_8
     
@@ -353,7 +515,7 @@ SUBROUTINE trackEnergyGain(state, energy_start, energy_end, sympT, freq)
 !	energy = 0.0
 	
 	DO i=1,numSteps,1
-		IF(present(sympT)) THEN
+		IF(PRESENT(sympT)) THEN
 			CALL symplecticStep(state, dt, energy, sympT, freq)
 		ELSE
 			CALL symplecticStep(state, dt, energy)
@@ -397,12 +559,12 @@ SUBROUTINE testEnergyGain(freq, height, sympT, eStart, eEnd)
 	USE constants
 	USE forcesAndPotential
 	IMPLICIT NONE
-	real(kind=PREC), intent(in) :: freq, height
-	real(kind=PREC), intent(inout) :: sympT
-	real(kind=PREC), intent(out) :: eStart, eEnd
+	REAL(KIND=PREC), INTENT(IN) :: freq, height
+	REAL(KIND=PREC), INTENT(INOUT) :: sympT
+	REAL(KIND=PREC), INTENT(OUT) :: eStart, eEnd
 
-	real(kind=PREC), dimension(6) :: state
-	integer :: i, numSteps
+	REAL(KIND=PREC), DIMENSION(6) :: state
+	INTEGER :: i, numSteps
 	
 	state = (/0.05_8, 0.0_8, height, 0.0_8, 0.0_8, 0.0_8/)
 	CALL calcEnergy(state, eStart)
@@ -423,13 +585,13 @@ SUBROUTINE trackAndPrint(state, sympT)
 	USE constants
 	USE forcesAndPotential
 	IMPLICIT NONE
-	real(kind=PREC), dimension(6), intent(inout) :: state
-	real(kind=PREC), optional, intent(in) :: sympT
+	REAL(KIND=PREC), DIMENSION(6), INTENT(INOUT) :: state
+	REAL(KIND=PREC), OPTIONAL, INTENT(IN) :: sympT
 	
-	real(kind=PREC) :: pr, rdot, r, pphi, phidot, phi, ptheta, thetadot, theta,&
+	REAL(KIND=PREC) :: pr, rdot, r, pphi, phidot, phi, ptheta, thetadot, theta,&
 		ldot, l, phiOffset, prevPhi, totalU, totalKE, t, energy, &
 		fx_dan, fy_dan, fz_dan, e_dan, fx_nate, fy_nate, fz_nate, e_nate
-	integer :: i, numSteps, numPoints, modulus
+	INTEGER :: i, numSteps, numPoints, modulus
 		
 !	numSteps = 250e0_8/dt
 	numSteps = 1000e0/dt
@@ -451,7 +613,7 @@ SUBROUTINE trackAndPrint(state, sympT)
 
 			!PRINT *, dt*i, energy
 		END IF
-		IF(present(sympT)) THEN
+		IF(PRESENT(sympT)) THEN
 			CALL symplecticStep(state, dt, energy, t, 60.0_8)
 		ELSE
 			CALL symplecticStep(state, dt, energy)
@@ -470,9 +632,9 @@ SUBROUTINE calcx0Mesh()
 	USE constants
 	!Calculate a field map on one plane for diagnostics
 	IMPLICIT NONE
-	real(kind=PREC) :: x, y, z, fx, fy, fz, totalUplus
-	real(kind=PREC) :: x0, y0, z0
-	integer :: xIt, yIt, zIt, aIt
+	REAL(KIND=PREC) :: x, y, z, fx, fy, fz, totalUplus
+	REAL(KIND=PREC) :: x0, y0, z0
+	INTEGER :: xIt, yIt, zIt, aIt
 	
 	x0 = -2
 	y0 = -2
@@ -497,42 +659,41 @@ SUBROUTINE check_upscatter(state, t, energy, blockHit)
 	USE forcesAndPotential
 	IMPLICIT NONE
 	
-	real(kind=PREC), intent(inout), dimension(6) :: state
-	real(kind=PREC), dimension(6) :: shiftState
+	REAL(KIND=PREC), INTENT(INOUT), DIMENSION(6) :: state
+	REAL(KIND=PREC), DIMENSION(6) :: shiftState
 		
-	real(kind=PREC) :: t, energy
-	real(kind=PREC) :: hitU, upscatterProb
+	REAL(KIND=PREC) :: t, energy
+	REAL(KIND=PREC) :: hitU, upscatterProb
 		
-	real(kind=PREC), dimension(3,3) :: rotation, invRotation
-	real(kind=PREC), dimension(3) :: blockSize
-	real(kind=PREC), dimension(3) :: blockPos
+	REAL(KIND=PREC), DIMENSION(3,3) :: rotation, invRotation
+	REAL(KIND=PREC), DIMENSION(3) :: blockSize
+	REAL(KIND=PREC), DIMENSION(3) :: blockPos
 	LOGICAL :: blockHit
 	
 	upscatterProb = 1.0_8
-	rotation = RESHAPE((/ 0.305229_8, 0.944162_8, 0.124068_8, -0.939275_8, &
-				0.319953_8, -0.124068_8, -0.156836_8, -0.0786645_8, 0.984487_8 /), &
-				SHAPE(rotation))
-	invRotation = RESHAPE((/ 0.305229_8, -0.939275_8, -0.156836_8, 0.944162_8, &
-				0.319953_8, -0.0786645_8, 0.124068_8, -0.124068_8, 0.984487_8 /), &
-				SHAPE(invRotation))
+	
+	rotation = RESHAPE((/ 0.305229_8, 0.944162_8, 0.124068_8, -0.939275_8,&
+				 0.319953_8, -0.124068_8, -0.156836_8, -0.0786645_8, 0.984487_8 /),&
+				 SHAPE(rotation))
+	invRotation = RESHAPE((/ 0.305229_8, -0.939275_8, -0.156836_8, 0.944162_8,&
+				 0.319953_8, -0.0786645_8, 0.124068_8, -0.124068_8, 0.984487_8 /),&
+				 SHAPE(invRotation))
 	blockSize = (/ 0.0125_8, 0.0125_8, 0.00625_8 /)
 	blockPos = (/ 0.2207_8, 0.127_8, -1.4431_8/)
 	
 	!Shift the neutron position to "block coordinates"
 	shiftState = (/ MATMUL(rotation, state(1:3) - blockPos), state(4:6) /)
+	
 	!Check if the neutron is inside the block
-	IF (ABS(shiftState(1)) .GT. blockSize(1)) THEN
-		state = state
-	ELSE IF (ABS(shiftState(2)) .GT. blockSize(2)) THEN
-		state = state
-	ELSE IF (ABS(shiftState(3)) .GT. blockSize(3)) THEN
+	IF (ABS(shiftState(1)) .GT. blockSize(1) .AND.&
+	 ABS(shiftState(2)) .GT. blockSize(2) .AND.&
+	 ABS(shiftState(3)) .GT. blockSize(3)) THEN
 		state = state
 	ELSE
-		PRINT *, "Block scattering!"
 		CALL RANDOM_NUMBER(hitU)
 		IF (hitU < upscatterProb) THEN 
-			WRITE(2) t, energy, state(5)*state(5)/(2.0_8*MASS_N)
-			WRITE(2) state(1), state(2), state(3)
+			WRITE(2) t, energy, state(5)*state(5)/(2.0_8*MASS_N),&
+			 state(1), state(2), state(3)
 			blockHit = .TRUE.
 		!If we don't upscatter, reflect off the block.
 		ELSE IF (shiftState(1) .GT. 0 .AND. shiftState(4) .LT. 0) THEN 
@@ -554,36 +715,6 @@ SUBROUTINE check_upscatter(state, t, energy, blockHit)
 			PRINT *, "UHOH"
 		END IF
 	END IF
-	!Same but in y
-!	ELSE IF (ABS(shiftState(2)) .LT. blockSize(2)) THEN
-!		!PRINT *, "Block scattering in y!"
-!		CALL RANDOM_NUMBER(hitU)
-!		IF (hitU < upscatterProb) THEN 
-!			WRITE(2) t, energy, state(5)*state(5)/(2.0_8*MASS_N)	
-!			STOP
-!		ELSE IF (shiftState(2) .GT. 0 .AND. shiftState(5) .LT. 0) THEN 
-!			CALL reflect(shiftState, (/ 0.0_8, 1.0_8, 0.0_8 /), (/ 0.0_8, 0.0_8, 1.0_8 /))
-!			state = (/ MATMUL(invRotation, shiftState(1:3)) + blockPos, shiftState(4:6) /)
-!		ELSE IF (shiftState(2) .LT. 0 .AND. shiftState(5) .GT. 0) THEN
-!			CALL reflect(shiftState, (/ 0.0_8, -1.0_8, 0.0_8 /), (/ 0.0_8, 0.0_8, 1.0_8 /))
-!			state = (/ MATMUL(invRotation, shiftState(1:3)) + blockPos, shiftState(4:6) /)
-!		ELSE 
-!			PRINT *, "UHOH"
-!		END IF
-!	!Also z, but there's only one possible z coord
-!	ELSE IF (ABS(shiftState(3)) .LT. blockSize(3)) THEN
-!		!PRINT *, "Block scattering in z!"
-!		CALL RANDOM_NUMBER(hitU)
-!		IF (hitU < upscatterProb) THEN 
-!			WRITE(2), t, energy, state(5)*state(5)/(2.0_8*MASS_N)
-!			STOP
-!		ELSE IF (shiftState(3) .GT. 0 .AND. shiftState(6) .LT. 0) THEN 
-!			CALL reflect(shiftState, (/ 0.0_8, 0.0_8, 1.0_8 /), (/ 1.0_8, 0.0_8, 0.0_8 /))
-!			state = (/ MATMUL(invRotation, shiftState(1:3)) + blockPos, shiftState(4:6) /)
-!		ELSE 
-!			PRINT *, "UHOH"
-!		END IF
-!	END IF
 	
 END SUBROUTINE check_upscatter
 

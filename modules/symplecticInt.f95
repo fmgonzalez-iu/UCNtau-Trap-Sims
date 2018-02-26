@@ -11,14 +11,14 @@ SUBROUTINE symplecticStep(state, deltaT, energy, t, freq)
 	USE forcesAndPotential
 	USE ISO_FORTRAN_ENV, ONLY : ERROR_UNIT
 	IMPLICIT NONE
-	real(kind=PREC), intent(inout), dimension(6) :: state
-	real(kind=PREC), intent(in) :: deltaT
-	real(kind=PREC), intent(out) :: energy
-	real(kind=PREC), optional, intent(inout) :: t
-	real(kind=PREC), optional, intent(in) :: freq
+	REAL(KIND=PREC), INTENT(INOUT), DIMENSION(6) :: state
+	REAL(KIND=PREC), INTENT(IN) :: deltaT
+	REAL(KIND=PREC), INTENT(OUT) :: energy
+	REAL(KIND=PREC), OPTIONAL, INTENT(INOUT) :: t
+	REAL(KIND=PREC), OPTIONAL, INTENT(IN) :: freq
 
-	real(kind=PREC) :: fx, fy, fz, totalU
-	integer :: n
+	REAL(KIND=PREC) :: fx, fy, fz, totalU
+	INTEGER :: n
 	
 	!Only gets compiled if VARIABLE isn't defined at the top
 	!For each step of the integration,
