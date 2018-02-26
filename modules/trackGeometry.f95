@@ -50,7 +50,7 @@ SUBROUTINE randomPointTrap(x,y,z,px,py,pz)
 		
 	target_p = SQRT(2.0_8*MASS_N*(energy - totalU))
 
-!    !cos(theta)*sin(theta) distribution
+	!cos(theta)*sin(theta) distribution
 !    CALL RANDOM_NUMBER(u1)
 !    CALL RANDOM_NUMBER(u2)
 !    theta = ASIN(SQRT(u1))
