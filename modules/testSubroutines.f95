@@ -151,38 +151,37 @@ SUBROUTINE absorb(ePerp, prob)
     prob = 1.0_8 - REALPART(CONJG(-mbar(2,1)/mbar(2,2))*(-mbar(2,1)/mbar(2,2)))
 END SUBROUTINE absorb
 
-SUBROUTINE check_upscatter(state, blockHit, prob)
+SUBROUTINE check_upscatter(prevState, state, blockHit)
 
 	USE constants
 	USE forcesAndPotential
 	IMPLICIT NONE
 	
+	REAL(KIND=PREC), INTENT(IN), DIMENSION(6) :: prevState
 	REAL(KIND=PREC), INTENT(INOUT), DIMENSION(6) :: state
 	LOGICAL, INTENT(INOUT) :: blockHit
-	REAL(KIND=PREC), INTENT(IN), OPTIONAL :: prob	
-	
+		
 	REAL(KIND=PREC) :: hitU, upscatterProb
-	REAL(KIND=PREC), DIMENSION(6) :: shiftState
+	REAL(KIND=PREC), DIMENSION(6) :: shiftPrevState, shiftState
 	REAL(KIND=PREC), DIMENSION(3,3) :: rotation, invRotation
-	REAL(KIND=PREC), DIMENSION(3) :: blockSize, blockPos
-
-	IF(PRESENT(prob)) THEN
-		upscatterProb = prob
-	ELSE
-		upscatterProb = 1.0_8
-	END IF
-	
-	rotation = RESHAPE((/ 0.305229_8, 0.944162_8, 0.124068_8, -0.939275_8,&
-				 0.319953_8, -0.124068_8, -0.156836_8, -0.0786645_8, 0.984487_8 /),&
-				 SHAPE(rotation))
-	invRotation = RESHAPE((/ 0.305229_8, -0.939275_8, -0.156836_8, 0.944162_8,&
-				 0.319953_8, -0.0786645_8, 0.124068_8, -0.124068_8, 0.984487_8 /),&
-				 SHAPE(invRotation))
+	REAL(KIND=PREC), DIMENSION(3) :: blockSize, blockPos, fracTravel
+		
+	rotation = RESHAPE((/ 0.3052294878125326_8, 0.9441621677380962_8, 0.1240675653899834_8, &
+					-0.9392750072476546_8, 0.3199526527130549_8, -0.1240675653899834_8, &
+					-0.1568356481467703_8, -0.07866448394274296_8, 0.9844869112570286_8 /),&
+				SHAPE(rotation))
+				
+	invRotation = RESHAPE((/ 0.3052294878125326_8, -0.9392750072476545_8, -0.1568356481467703_8, &
+					0.9441621677380965_8, 0.3199526527130550_8, -0.07866448394274296_8, &
+					0.1240675653899834_8, -0.1240675653899834_8, 0.9844869112570285_8 /), &
+				SHAPE(invRotation))
 	blockSize = (/ 0.0125_8, 0.0125_8, 0.00625_8 /)
 	blockPos = (/ 0.2207_8, 0.127_8, -1.4431_8/)
+	fracTravel = 0.0_8
 	
 	!Shift the neutron position to "block coordinates"
-	shiftState = (/ MATMUL(rotation, state(1:3) - blockPos), state(4:6) /)
+	shiftPrevState = (/ MATMUL(rotation, prevState(1:3) - blockPos), MATMUL(rotation,prevState(4:6)) /)
+	shiftState = (/ MATMUL(rotation, state(1:3) - blockPos), MATMUL(rotation,state(4:6)) /)
 	
 	!Check if the neutron is inside the block
 	IF (ABS(shiftState(1)) .GT. blockSize(1) .OR. &
@@ -190,28 +189,61 @@ SUBROUTINE check_upscatter(state, blockHit, prob)
 			ABS(shiftState(3)) .GT. blockSize(3)) THEN
 		state = state
 	ELSE
-		CALL RANDOM_NUMBER(hitU)
-		IF (hitU < upscatterProb) THEN 
-			blockHit = .TRUE.
+		blockHit = .TRUE.
+		fracTravel(1) = (SIGN(blockSize(1), shiftState(1)) - shiftPrevState(1)) / &
+						ABS(shiftState(1) - shiftPrevState(1))
+		IF (ABS(fracTravel(1)) > 1) THEN
+			fracTravel(1) = 0.0_8
+		END IF
+		fracTravel(2) = (SIGN(blockSize(2), shiftState(2)) - shiftPrevState(2)) / &
+						ABS(shiftState(2) - shiftPrevState(2))
+		IF (ABS(fracTravel(2)) > 1) THEN
+			fracTravel(2) = 0.0_8
+		END IF
+		fracTravel(3) = (SIGN(blockSize(3), shiftState(3)) - shiftPrevState(3)) / &
+						ABS(shiftState(3) - shiftPrevState(3))
+		IF (ABS(fracTravel(3)) > 1) THEN
+			fracTravel(3) = 0.0_8
+		END IF		
+		
 		!If we don't upscatter, reflect off the block.
-		ELSE IF (shiftState(1) .GT. 0 .AND. shiftState(4) .LT. 0) THEN 
-			CALL reflect(shiftState, (/ 1.0_8, 0.0_8, 0.0_8 /), (/ 0.0_8, 0.0_8, 1.0_8 /))
-			state = (/ MATMUL(invRotation, shiftState(1:3)) + blockPos, shiftState(4:6) /)
-		ELSE IF (shiftState(1) .LT. 0 .AND. shiftState(4) .GT. 0) THEN
-			CALL reflect(shiftState, (/ -1.0_8, 0.0_8, 0.0_8 /), (/ 0.0_8, 0.0_8, 1.0_8 /))
-			state = (/ MATMUL(invRotation, shiftState(1:3)) + blockPos, shiftState(4:6) /)
-		ELSE IF (shiftState(2) .GT. 0 .AND. shiftState(5) .LT. 0) THEN 
-			CALL reflect(shiftState, (/ 0.0_8, 1.0_8, 0.0_8 /), (/ 0.0_8, 0.0_8, 1.0_8 /))
-			state = (/ MATMUL(invRotation, shiftState(1:3)) + blockPos, shiftState(4:6) /)
-		ELSE IF (shiftState(2) .LT. 0 .AND. shiftState(5) .GT. 0) THEN
-			CALL reflect(shiftState, (/ 0.0_8, -1.0_8, 0.0_8 /), (/ 0.0_8, 0.0_8, 1.0_8 /))
-			state = (/ MATMUL(invRotation, shiftState(1:3)) + blockPos, shiftState(4:6) /)
-		ELSE IF (shiftState(3) .GT. 0 .AND. shiftState(6) .LT. 0) THEN 
-			CALL reflect(shiftState, (/ 0.0_8, 0.0_8, 1.0_8 /), (/ 1.0_8, 0.0_8, 0.0_8 /))
-			state = (/ MATMUL(invRotation, shiftState(1:3)) + blockPos, shiftState(4:6) /)
+		IF ((ABS(fracTravel(3)) > ABS(fracTravel(1))) .AND. &
+				(ABS(fracTravel(3)) > ABS(fracTravel(2)))) THEN
+			CALL reflect(shiftPrevState, (/ 0.0_8, 0.0_8, 1.0_8 /), (/ 1.0_8, 0.0_8, 0.0_8 /))
+			state = (/ MATMUL(invRotation, shiftPrevState(1:3)) + blockPos, &
+					MATMUL(invRotation,shiftPrevState(4:6)) /)
+			!PRINT *," Reflection in +z "
+		ELSE IF ((ABS(fracTravel(1)) > ABS(fracTravel(2))) .AND. &
+				(ABS(fracTravel(1)) > ABS(fracTravel(3))) .AND. &
+				(fracTravel(1) < 0)) THEN
+			CALL reflect(shiftPrevState, (/ 1.0_8, 0.0_8, 0.0_8 /), (/ 0.0_8, 0.0_8, 1.0_8 /))
+			state = (/ MATMUL(invRotation, shiftPrevState(1:3)) + blockPos, &
+					MATMUL(invRotation,shiftPrevState(4:6)) /)
+			!PRINT *," Reflection in +x "
+		ELSE IF ((ABS(fracTravel(1)) > ABS(fracTravel(2))) .AND. &
+				(ABS(fracTravel(1)) > ABS(fracTravel(3))) .AND. &
+				(fracTravel(1) > 0)) THEN
+			CALL reflect(shiftPrevState, (/ -1.0_8, 0.0_8, 0.0_8 /), (/ 0.0_8, 0.0_8, 1.0_8 /))
+			state = (/ MATMUL(invRotation, shiftPrevState(1:3)) + blockPos, &
+					MATMUL(invRotation,shiftPrevState(4:6)) /)
+			!PRINT *," Reflection in -x "
+		ELSE IF ((ABS(fracTravel(2)) > ABS(fracTravel(1))) .AND. &
+				(ABS(fracTravel(2)) > ABS(fracTravel(3))) .AND. &
+				(fracTravel(2) < 0)) THEN
+			CALL reflect(shiftPrevState, (/ 0.0_8, 1.0_8, 0.0_8 /), (/ 0.0_8, 0.0_8, 1.0_8 /))
+			state = (/ MATMUL(invRotation, shiftPrevState(1:3)) + blockPos, &
+					MATMUL(invRotation,shiftPrevState(4:6)) /)
+			!PRINT *," Reflection in +y "
+		ELSE IF ((ABS(fracTravel(2)) > ABS(fracTravel(1))) .AND. &
+				(ABS(fracTravel(2)) > ABS(fracTravel(3))) .AND. &
+				(fracTravel(2) > 0)) THEN
+			CALL reflect(shiftPrevState, (/ 0.0_8, -1.0_8, 0.0_8 /), (/ 0.0_8, 0.0_8, 1.0_8 /))
+			state = (/ MATMUL(invRotation, shiftPrevState(1:3)) + blockPos, &
+					MATMUL(invRotation,shiftPrevState(4:6)) /)
+			!PRINT *," Reflection in -y "
 		ELSE 
 			PRINT *, "UHOH"
-		END IF
+		END IF		
 	END IF
 END SUBROUTINE check_upscatter
 
@@ -429,15 +461,16 @@ SUBROUTINE trackDaggerAndBlock(state, holdT)
 	REAL(KIND=PREC), DIMENSION(6), INTENT(INOUT) :: state
 	REAL(KIND=PREC), INTENT(IN), OPTIONAL :: holdT
 	
-	INTEGER :: i, numSteps, nHit, nHitHouseLow, nHitHouseHigh
+	INTEGER :: i, numSteps, nHit, nHitHouseLow, nHitHouseHigh, nBlockHit
 	LOGICAL :: blockHit, dagHit
 	REAL(KIND=PREC) :: t, fracTravel, predX, predZ, energy, zOff, zeta, blockProb
-	REAL(KIND=PREC) :: cleaningTime, settlingTime, absProb, absU, deathTime
+	REAL(KIND=PREC) :: cleaningTime, settlingTime, absProb, absU, deathTime, predY
 	REAL(KIND=PREC), DIMENSION(6) :: prevState
 	
 	nHit = 0
 	nHitHouseLow = 0
 	nHitHouseHigh = 0
+	nBlockHit = 0
 	blockHit = .FALSE.	
 	dagHit = .FALSE. 
 	t = 0.0_8
@@ -460,13 +493,15 @@ SUBROUTINE trackDaggerAndBlock(state, holdT)
 
 	numSteps = settlingTime/dt
 	DO i=1,numSteps,1
+		prevState = state
 		CALL symplecticStep(state, dt, energy)
 		t = t + dt
-		CALL check_upscatter(state, blockHit, blockProb)
+		CALL check_upscatter(prevState, state, blockHit)
 		IF (blockHit) THEN
-		!	WRITE(2) t, energy, nHit, nHitHouseLow, nHitHouseHigh, &
-		!	state(1), state(2), state(3)
-			EXIT
+			nBlockHit = nBlockHit + 1
+			WRITE(2) t, energy, nHit, nHitHouseLow, nHitHouseHigh, &
+				nBlockHit, state(1), state(2), state(3)
+			blockHit = .FALSE.
 		END IF
 	END DO
 	
@@ -476,10 +511,12 @@ SUBROUTINE trackDaggerAndBlock(state, holdT)
 		t = t + dt
 		
 		IF ((.NOT. blockHit) .AND. (.NOT. dagHit)) THEN
-			CALL check_upscatter(state, blockHit, blockProb) 
+			CALL check_upscatter(prevState, state, blockHit) 
 			IF (blockHit) THEN
-			!	WRITE(2) t, energy, nHit, nHitHouseLow, nHitHouseHigh, &
-			!	state(1), state(2), state(3)
+				nBlockHit = nBlockHit + 1
+				WRITE(2) t, energy, nHit, nHitHouseLow, nHitHouseHigh, &
+					nBlockHit, state(1), state(2), state(3)
+				blockHit = .FALSE.
 			END IF 
 		END IF
 		IF (blockHit) THEN 
@@ -506,9 +543,8 @@ SUBROUTINE trackDaggerAndBlock(state, holdT)
 				CALL RANDOM_NUMBER(absU)
 				IF (absU < absProb) THEN
 					WRITE(1) t - settlingTime, energy, state(5)*state(5)/(2.0_8*MASS_N), &
-					predX, 0.0_8, predZ, zOff, nHit, nHitHouseLow, nHitHouseHigh
+					predX, 0.0_8, predZ, zOff, nHit, nHitHouseLow, nHitHouseHigh, nBlockHit
 					dagHit = .TRUE.
-					!PRINT *, "hit dagger"
 					EXIT
 				END IF
                 
@@ -549,7 +585,6 @@ SUBROUTINE trackDaggerAndBlock(state, holdT)
 			END IF
 		END IF
 	END DO
-	
 END SUBROUTINE trackDaggerAndBlock
 
 !-----------------Subroutines for debug purposes------------------------
