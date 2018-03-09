@@ -170,21 +170,29 @@ SUBROUTINE check_upscatter(prevState, state, blockHit)
 	!				-0.9392750072476546_8, 0.3199526527130549_8, -0.1240675653899834_8, &
 	!				-0.1568356481467703_8, -0.07866448394274296_8, 0.9844869112570286_8 /),&
 	!			SHAPE(rotation))
-	rotation = RESHAPE((/ 0.4981846821401102_8, 0.8070369212756123_8, 0.3170227597175609_8, &
-					-0.7463198129200769_8, 0.5852378206028750_8, -0.3170227597175609_8, &
-					-0.4413827809553729_8, -0.07866448394274296_8, 0.8938641617394241_8 /),&
-				SHAPE(rotation))
-				
+	!invRotation = RESHAPE((/ 0.4981846821401102_8, 0.8070369212756123_8, 0.3170227597175609_8, &
+	!				-0.7463198129200769_8, 0.5852378206028750_8, -0.3170227597175609_8, &
+	!				-0.4413827809553729_8, -0.07866448394274296_8, 0.8938641617394241_8 /),&
+	!			SHAPE(rotation))
+	invRotation = RESHAPE((/ 0.4981846187446881_8, 0.8070370832294234_8, 0.3170224470581768_8, &
+					-0.7463198129200769_8, 0.5852378206028750_8, -0.3170224470581768_8, &
+					-0.4413823244195138_8, -0.07866452547073647_8, 0.8938643835182667_8 /),&
+				SHAPE(invRotation))
 	!invRotation = RESHAPE((/ 0.3052294878125326_8, -0.9392750072476545_8, -0.1568356481467703_8, &
 	!				0.9441621677380965_8, 0.3199526527130550_8, -0.07866448394274296_8, &
 	!				0.1240675653899834_8, -0.1240675653899834_8, 0.9844869112570285_8 /), &
 	!			SHAPE(invRotation))
-	invRotation = RESHAPE((/ 0.4981846821401102_8, -0.7463198129200770_8, -0.4413827809553729_8, &
-					0.8070369212756124_8, 0.5852378206028751_8, -0.07866448394274295_8, &
-					0.3170227597175610_8, -0.3170227597175610_8, 0.8938641617394240_8 /), &
-				SHAPE(invRotation))
-	blockSize = (/ 0.0125_8, 0.0125_8, 0.00625_8 /)
-	blockPos = (/ 0.2207_8, 0.127_8, -1.4431_8/)
+	!rotation = RESHAPE((/ 0.4981846821401102_8, -0.7463198129200770_8, -0.4413827809553729_8, &
+	!				0.8070369212756124_8, 0.5852378206028751_8, -0.07866448394274295_8, &
+	!				0.3170227597175610_8, -0.3170227597175610_8, 0.8938641617394240_8 /), &
+	!			SHAPE(rotation))
+	rotation = RESHAPE((/ 0.4981846187446881_8, -0.7463198129200769_8, -0.4413823244195138_8, &
+					0.8070370832294234_8, 0.5852378206028751_8, -0.07866452547073647_8, &
+					0.3170227597175610_8, -0.3170224470581768_8, 0.8938643835182667_8 /), &
+				SHAPE(rotation))
+	blockSize = (/ 0.0127_8, 0.0127_8, 0.00635_8 /)
+	!blockPos = (/ 0.2207_8, 0.127_8, -1.4431_8/)
+	blockPos = (/ 0.2175882546128424, 0.1264454150954313, -1.436798256096196 /)
 	fracTravel = 0.0_8
 	
 	!Shift the neutron position to "block coordinates"
@@ -471,7 +479,7 @@ SUBROUTINE trackDaggerAndBlock(state, holdT)
 	
 	INTEGER :: i, numSteps, nHit, nHitHouseLow, nHitHouseHigh, nBlockHit
 	LOGICAL :: blockHit, dagHit
-	REAL(KIND=PREC) :: t, fracTravel, predX, predZ, energy, zOff, zeta, blockProb
+	REAL(KIND=PREC) :: t, fracTravel, predX, predZ, energy, zOff, zeta, theta
 	REAL(KIND=PREC) :: cleaningTime, settlingTime, absProb, absU, deathTime, predY
 	REAL(KIND=PREC), DIMENSION(6) :: prevState
 	
@@ -483,6 +491,8 @@ SUBROUTINE trackDaggerAndBlock(state, holdT)
 	dagHit = .FALSE. 
 	t = 0.0_8
 	
+	theta = ACOS(state(6)/SQRT(state(4)**2 + state(5)**2 + state(6)**2))
+	
 	!Hard coded in cleaning time, defaults to 20s hold
 	cleaningTime = 50.0_8 
 	IF (PRESENT(holdT)) THEN
@@ -490,10 +500,7 @@ SUBROUTINE trackDaggerAndBlock(state, holdT)
 	ELSE
 		settlingTime = cleaningTime + 20.0_8
 	END IF 
-	
-	!Block upscatter probability (100% upscatter hardcoded in for now)
-	blockProb = 1.0_8
-	
+		
 	!Functionality for neutron decay. Presently commented out, set to kill after 2000s
 	!CALL RANDOM_NUMBER(deathTime)
 	!deathTime = -877.7*LOG(deathTime)
@@ -508,7 +515,7 @@ SUBROUTINE trackDaggerAndBlock(state, holdT)
 		IF (blockHit) THEN
 			nBlockHit = nBlockHit + 1
 			WRITE(2) t, energy, nHit, nHitHouseLow, nHitHouseHigh, &
-				nBlockHit, state(1), state(2), state(3)
+				nBlockHit, state(1), state(2), state(3), theta
 			blockHit = .FALSE.
 		END IF
 	END DO
@@ -523,7 +530,7 @@ SUBROUTINE trackDaggerAndBlock(state, holdT)
 			IF (blockHit) THEN
 				nBlockHit = nBlockHit + 1
 				WRITE(2) t, energy, nHit, nHitHouseLow, nHitHouseHigh, &
-					nBlockHit, state(1), state(2), state(3)
+					nBlockHit, state(1), state(2), state(3), theta
 				blockHit = .FALSE.
 			END IF 
 		END IF
@@ -551,7 +558,8 @@ SUBROUTINE trackDaggerAndBlock(state, holdT)
 				CALL RANDOM_NUMBER(absU)
 				IF (absU < absProb) THEN
 					WRITE(1) t - settlingTime, energy, state(5)*state(5)/(2.0_8*MASS_N), &
-					predX, 0.0_8, predZ, zOff, nHit, nHitHouseLow, nHitHouseHigh, nBlockHit
+						predX, 0.0_8, predZ, zOff, nHit, nHitHouseLow, nHitHouseHigh, nBlockHit, &
+						theta
 					dagHit = .TRUE.
 					EXIT
 				END IF

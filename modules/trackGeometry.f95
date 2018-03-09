@@ -13,7 +13,8 @@ SUBROUTINE randomPointTrap(x,y,z,px,py,pz)
 					target_p, p_reject_val, p_len, en_reject_val
 	REAL(KIND=PREC) :: u1, u2, phi, theta !Used for lambertian generation of track directions
 !	maxEnergy = GRAV*MASS_N*0.38_8 !Assume cleaning height of 38cm
-	maxEnergy = GRAV*MASS_N*0.345_8 !Assume cleaning height of 38cm - 3.5cm to the zero energy point
+	!maxEnergy = GRAV*MASS_N*0.345_8 !Assume cleaning height of 38cm - 3.5cm to the zero energy point
+	maxEnergy = GRAV*MASS_N*0.3444136691300193_8
     !A UCN of energy 34.5cm can reach 38cm w.r.t. the bottom of the trap.
 	max_p = SQRT(2.0_8*MASS_N*maxEnergy)
 	
@@ -60,15 +61,27 @@ SUBROUTINE randomPointTrap(x,y,z,px,py,pz)
 !    py = SIN(theta)*SIN(phi)
 !    pz = COS(theta)
 
+
     !Isotropic emission
+!    CALL RANDOM_NUMBER(u1)
+!    CALL RANDOM_NUMBER(u2)
+!    u1 = u1 * 2 - 1.0_8
+!    phi = 2.0_8 * PI * u2
+!
+!    px = SQRT(1-u1*u1)*COS(phi)
+!    py = SQRT(1-u1*u1)*SIN(phi)
+!    pz = u1
+
+
+	!Flat in theta emission
     CALL RANDOM_NUMBER(u1)
     CALL RANDOM_NUMBER(u2)
-    u1 = u1 * 2 - 1.0_8
+    theta = u1 * PI / 2.0_8
     phi = 2.0_8 * PI * u2
 
-    px = SQRT(1-u1*u1)*COS(phi)
-    py = SQRT(1-u1*u1)*SIN(phi)
-    pz = u1
+    px = SIN(theta)*COS(phi)
+    py = SIN(theta)*SIN(phi)
+    pz = COS(theta)
 
     p_len = SQRT(px*px + py*py + pz*pz)
 
@@ -86,14 +99,16 @@ SUBROUTINE randomPointTrapOptimum(x,y,z,px,py,pz)
     REAL(KIND=PREC) :: zeta, maj_r, min_r, totalU, energy, max_p, maxEnergy, &
                     target_p, p_reject_val, p_len, en_reject_val
     REAL(KIND=PREC) :: u1, u2, phi, theta !Used for lambertian generation of track directions
-    maxEnergy = GRAV*MASS_N*0.345_8 !Assume cleaning height of 38cm - 3.5cm to the zero energy point
+    !maxEnergy = GRAV*MASS_N*0.345_8 !Assume cleaning height of 38cm - 3.5cm to the zero energy point
+    maxEnergy = GRAV*MASS_N*0.3444136691300193_8 !More precise maxEnergy using more precise zmin.
     !A UCN of energy 34.5cm can reach 38cm w.r.t. the bottom of the trap.
     max_p = SQRT(2.0_8*MASS_N*maxEnergy)
     
     DO
         CALL RANDOM_NUMBER(energy)
         energy = maxEnergy * energy
-        IF (energy < 11.7/JTONEV) THEN
+!        IF (energy < 11.7/JTONEV) THEN
+		IF (energy < 11.641026_8/JTONEV) THEN
             CYCLE
         END IF
         
