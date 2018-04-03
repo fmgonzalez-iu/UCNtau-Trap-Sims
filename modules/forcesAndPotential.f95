@@ -24,7 +24,7 @@ SUBROUTINE totalForce(x, y, z, fx, fy, fz, totalU, t)
 	REAL(KIND=PREC), INTENT(IN) :: x, y, z
 	REAL(KIND=PREC), INTENT(OUT) :: fx, fy, fz
 	REAL(KIND=PREC), INTENT(OUT) :: totalU
-	!REAL(KIND=PREC), OPTIONAL, INTENT(IN) :: t, freq
+	REAL(KIND=PREC), OPTIONAL, INTENT(IN) :: t
 	
 	IF(PRESENT(t)) THEN
 		CALL force(x, y, z, fx, fy, fz, totalU, t)

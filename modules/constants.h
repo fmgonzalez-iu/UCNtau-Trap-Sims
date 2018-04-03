@@ -6,7 +6,8 @@
 
 #define HBAR 1.054571800e-34
 
-#define PREC 8 !PREC is size of float in bytes
+!PREC is size of float in bytes
+#define PREC 8 
 
 #define EPSILON 1.0e-9_8
 
