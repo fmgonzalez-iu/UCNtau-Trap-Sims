@@ -137,7 +137,7 @@ SUBROUTINE absorb(ePerp, prob)
     pots(4) = CMPLX(vzns, -wzns)
     zs(1) = (0.0, 0.0)
     zs(2) = (0.0, 0.0)
-    zs(3) = (20e-9)
+    zs(3) = (4.6e-9)
     zs(4) = (10000e-9)
     mbar(1,1) = (1, 0)
     mbar(1,2) = (0, 0)
@@ -509,7 +509,7 @@ SUBROUTINE trackDaggerAndBlock(state, holdT)
 	numSteps = settlingTime/dt
 	DO i=1,numSteps,1
 		prevState = state
-		CALL symplecticStep(state, dt, energy)
+		CALL symplecticStep(state, dt, energy, t)
 		t = t + dt
 		CALL check_upscatter(prevState, state, blockHit)
 		IF (blockHit) THEN
@@ -522,7 +522,7 @@ SUBROUTINE trackDaggerAndBlock(state, holdT)
 	
 	DO
 		prevState = state
-		CALL symplecticStep(state, dt, energy)
+		CALL symplecticStep(state, dt, energy, t)
 		t = t + dt
 		
 		IF ((.NOT. blockHit) .AND. (.NOT. dagHit)) THEN
@@ -647,7 +647,7 @@ SUBROUTINE trackEnergyGain(state, energy_start, energy_end, sympT, freq)
 	
 	DO i=1,numSteps,1
 		IF(PRESENT(sympT)) THEN
-			CALL symplecticStep(state, dt, energy, sympT, freq)
+			CALL symplecticStep(state, dt, energy, sympT)
 		ELSE
 			CALL symplecticStep(state, dt, energy)
 			t = t+dt
@@ -703,7 +703,7 @@ SUBROUTINE testEnergyGain(freq, height, sympT, eStart, eEnd)
 	numSteps = 10e0/dt
 	
 	DO i=1,numSteps,1
-		CALL symplecticStep(state, dt, eEnd, sympT, freq)
+		CALL symplecticStep(state, dt, eEnd, sympT)
 		IF (state(3) >= -1.5_8 + ((height + 1.5) / 4.0_8) .AND. state(6) > 0) THEN
 			EXIT
 		END IF
@@ -745,7 +745,7 @@ SUBROUTINE trackAndPrint(state, sympT)
 			!PRINT *, dt*i, energy
 		END IF
 		IF(PRESENT(sympT)) THEN
-			CALL symplecticStep(state, dt, energy, t, 60.0_8)
+			CALL symplecticStep(state, dt, energy, t)
 		ELSE
 			CALL symplecticStep(state, dt, energy)
 !			CALL totalForce(state(1), state(2), state(3), fx_nate, fy_nate, fz_nate, e_nate)

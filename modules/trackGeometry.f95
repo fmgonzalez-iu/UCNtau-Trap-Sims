@@ -27,7 +27,7 @@ SUBROUTINE randomPointTrap(x,y,z,px,py,pz)
 !		IF (energy > GRAV*MASS_N*0.1_8) THEN
 !			EXIT
 !		END IF
-		IF (energy > GRAV*MASS_N*0.015_8) THEN
+		IF (energy > GRAV*MASS_N*0.01_8) THEN ! Forcing minimum energy > 1CM
 			EXIT
 		END IF
 !		CALL RANDOM_NUMBER(en_reject_val)

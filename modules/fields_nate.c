@@ -3,24 +3,24 @@
 #include <stdio.h>
 
 #define B_HOLD 0.005 //holding field strength
-#define B_REM 1.4 //remnant magnet field strength
+//#define B_REM 1.4 //remnant magnet field strength
+#define B_REM 1.35 // remnant magnet field strength
 #define MAG_THICK 0.0254 //thickness of layer of PM array
 //#define MAG_SPACE 0.02 //characteristic spacing of magnets
-#define MAG_SPACE 0.0508 //characteristic spacing of magnets
+//#define MAG_SPACE 0.0508 //characteristic spacing of magnets
+#define MAG_SPACE 0.05114 // characteristic spacing of magnets
 //#define mu -9.662364e-27/1.674927351e-27 //mu in units where m=1
 #define MU_N -9.6623647e-27
 #define MASS_N 1.674927471e-27
 #define GRAV 9.80665e0
 #define N_TERMS 3 //how far out to go in field ripple expansion
-//#define FREQ 60
-//#define FREQ 1000
-//#define AMPLITUDE 0.000010
+#define FREQ 60
+#define AMPLITUDE 0.000020
 //#define AMPLITUDE 0.000005
 //#define AMPLITUDE 0.000001
-#define AMPLITUDE 0.0
 #define KAPPA 1000
 
-void force_(double *x_in, double *y_in, double *z_in, double *fx, double *fy, double *fz, double *totalU, double* t, double* freq) //analytical form of halbach field force, mu*del(mod(B))
+void force_(double *x_in, double *y_in, double *z_in, double *fx, double *fy, double *fz, double *totalU, double* t) //analytical form of halbach field force, mu*del(mod(B))
 {
 //	printf("%f %f %e\n", *t, *freq, AMPLITUDE * sin(2*M_PI * (*freq) * (*t)));
 //	printf("%e\n", *x_in);
@@ -34,8 +34,8 @@ void force_(double *x_in, double *y_in, double *z_in, double *fx, double *fy, do
 
 	double gx=0.0, gy=0.0, gz=0.0, R, r, Rprime, rprime;
 	
-	R = 0.5 + 0.5/(1 + exp(-KAPPA*x));
-	r = 1.0 - 0.5/(1 + exp(-KAPPA*x));
+	R = 0.5 + 0.5/(1 + exp(-KAPPA*x)) + AMPLITUDE * sin(2*M_PI * FREQ * (*t));
+	r = 1.0 - 0.5/(1 + exp(-KAPPA*x)) + AMPLITUDE * sin(2*M_PI * FREQ * (*t));
 	Rprime = 0.5*KAPPA*(1.0 - 1.0/(1 + exp(-KAPPA*x)))*1.0/(1 + exp(-KAPPA*x));
 	rprime = -Rprime;
 
@@ -77,11 +77,11 @@ void force_(double *x_in, double *y_in, double *z_in, double *fx, double *fy, do
 		
 		double b_tot = sqrt(b_zeta*b_zeta + b_eta*b_eta + b_hold*b_hold);
 	
-		//zeta, eta
+		/* zeta, eta */
 		double d_BZeta[2] = {-1*A*sum_k_cos, -1*A*sum_k_sin};
 		double d_BEta[2] = {-1*A*sum_k_sin, A*sum_k_cos};
 
-		//x,y,z
+		/* x,y,z */
 		double d_Bh[3] = {0.0,
 						  -B_HOLD*(r+R)*y/(pow(y*y + z*z, 3.0/2.0)),
 						  -B_HOLD*(r+R)*z/(pow(y*y + z*z, 3.0/2.0))};
@@ -162,20 +162,15 @@ void fieldstrength_(double *x_in, double *y_in, double *z_in, double *totalB, do
 	double x = *x_in;
 	double y = *y_in;
 	double z = *z_in;
+	double z_grav = *z_in;
 
-	double R, r;
+	double R, r, Rprime, rprime;
 
-	if (x > 0.0)
-	{
-		R = 1.0;
-		r = 0.5;
-	}
-	else
-	{
-		R = 0.5;
-		r = 1.0;
-	}
-
+	R = 0.5 + 0.5/(1 + exp(-KAPPA*x)) + AMPLITUDE * sin(2*M_PI * FREQ * (*t));
+	r = 1.0 - 0.5/(1 + exp(-KAPPA*x)) + AMPLITUDE * sin(2*M_PI * FREQ * (*t));
+	Rprime = 0.5*KAPPA*(1.0 - 1.0/(1 + exp(-KAPPA*x)))*1.0/(1 + exp(-KAPPA*x));
+	rprime = -Rprime;
+	
 	double rho = sqrt(y*y+z*z);
 	double r_zeta = sqrt((rho-R)*(rho-R)+x*x);
 
@@ -222,20 +217,13 @@ void potential_(double *x_in, double *y_in, double *z_in, double *totalU, double
 	double x = *x_in;
 	double y = *y_in;
 	double z = *z_in;
+	double z_grav = *z_in;
+	
+	double R, r, Rprime, rprime;
 
-	double R, r;
-
-	if (x > 0.0)
-	{
-		R = 1.0;
-		r = 0.5;
-	}
-	else
-	{
-		R = 0.5;
-		r = 1.0;
-	}
-
+	R = 0.5 + 0.5/(1 + exp(-KAPPA*x)) + AMPLITUDE * sin(2*M_PI * FREQ * (*t));
+	r = 1.0 - 0.5/(1 + exp(-KAPPA*x)) + AMPLITUDE * sin(2*M_PI * FREQ * (*t));
+	
 	double rho = sqrt(y*y+z*z);
 	double r_zeta = sqrt((rho-R)*(rho-R)+x*x);
 
