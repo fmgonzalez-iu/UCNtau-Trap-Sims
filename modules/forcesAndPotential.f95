@@ -1,66 +1,92 @@
 #include "constants.h"
 
 MODULE forcesAndPotential
-	real(kind=PREC) :: minU
+	
+	USE convertTrace
+	REAL(KIND=PREC) :: minU
 
 CONTAINS
 
-SUBROUTINE totalPotential(x, y, z, totalU, t)
+SUBROUTINE totalPotential(x, y, z, totalU, t, trX, trY, trZ, n)
 	IMPLICIT NONE
 	REAL(KIND=PREC), INTENT(IN) :: x, y, z
 	REAL(KIND=PREC), INTENT(OUT) :: totalU
+	INTEGER, OPTIONAL, INTENT(IN) :: n
 	REAL(KIND=PREC), OPTIONAL, INTENT(IN) :: t
+	REAL(KIND=PREC), OPTIONAL, INTENT(IN), ALLOCATABLE :: trX(:), trY(:), trZ(:)
+	REAL(KIND=PREC) ::  xf, yf, zf
 	
 	IF(PRESENT(t)) THEN
-		CALL potential(x, y, z, totalU, t)
+		IF(PRESENT(n)) THEN
+		!	ALLOCATE(trX(n))
+		!	ALLOCATE(trY(n))
+		!	ALLOCATE(trZ(n))
+			CALL shiftTrace(t,trX,trY,trZ, n, x,y,z, xf,yf,zf)
+		ELSE ! If we can't properly shift the traces, just don't shift!
+			xf = x
+			yf = y
+			zf = z
+		END IF
+		CALL potential(xf, yf, zf, totalU, t)
 	ELSE
-		CALL potential(x, y, z, totalU)
+		CALL potential(x, y, z, totalU, 0.0_8)
 	END IF
 	totalU = totalU - minU
 END SUBROUTINE totalPotential
 
-SUBROUTINE totalForce(x, y, z, fx, fy, fz, totalU, t)
+SUBROUTINE totalForce(x, y, z, fx, fy, fz, totalU, t, trX, trY, trZ, n)
 	IMPLICIT NONE
 	REAL(KIND=PREC), INTENT(IN) :: x, y, z
 	REAL(KIND=PREC), INTENT(OUT) :: fx, fy, fz
 	REAL(KIND=PREC), INTENT(OUT) :: totalU
+	INTEGER, OPTIONAL, INTENT(IN) :: n
 	REAL(KIND=PREC), OPTIONAL, INTENT(IN) :: t
+	REAL(KIND=PREC), OPTIONAL, INTENT(IN), ALLOCATABLE :: trX(:), trY(:), trZ(:)
+	REAL(KIND=PREC) ::  xf, yf, zf
 	
 	IF(PRESENT(t)) THEN
-		CALL force(x, y, z, fx, fy, fz, totalU, t)
+		IF(PRESENT(n)) THEN
+		!	ALLOCATE(trX(n))
+		!	ALLOCATE(trY(n))
+		!	ALLOCATE(trZ(n))
+			CALL shiftTrace(t,trX,trY,trZ, n, x,y,z, xf,yf,zf)
+		ELSE ! If we can't properly shift the traces, just don't shift!
+			xf = x
+			yf = y
+			zf = z
+		END IF
+		
+		CALL force(xf, yf, zf, fx, fy, fz, totalU, t)
 	ELSE
-		CALL force(x, y, z, fx, fy, fz, totalU, 0, 0)
+		CALL force(x, y, z, fx, fy, fz, totalU, 0.0_8)
 	END IF
+	
 	totalU = totalU - minU
 END SUBROUTINE totalForce
 
-!SUBROUTINE totalForceDan(x, y, z, fx, fy, fz, totalU, t)
-!	IMPLICIT NONE
-!	real(kind=PREC), intent(in) :: x, y, z
-!	real(kind=PREC), intent(out) :: fx, fy, fz
-!	real(kind=PREC), intent(out) :: totalU
-!	real(kind=PREC), optional, intent(in) :: t
-!	
-!	IF(PRESENT(t)) THEN
-!		CALL force_dan(x, y, z, fx, fy, fz, t)
-!	ELSE
-!		CALL force_dan(x, y, z, fx, fy, fz)
-!	END IF
-!
-!END SUBROUTINE totalForceDan
-
-
-SUBROUTINE calcEnergy(state, energy, t)
+SUBROUTINE calcEnergy(state, energy, t, trX, trY,trZ, n)
 	IMPLICIT NONE
 	REAL(KIND=PREC), DIMENSION(6), INTENT(IN) :: state
 	REAL(KIND=PREC), INTENT(OUT) :: energy
+	INTEGER, OPTIONAL, INTENT(IN) :: n
 	REAL(KIND=PREC), OPTIONAL, INTENT(IN) :: t
-	REAL(KIND=PREC) :: totalU
-	
+	REAL(KIND=PREC), OPTIONAL, INTENT(IN), ALLOCATABLE :: trX(:), trY(:), trZ(:)
+	REAL(KIND=PREC) ::  xf, yf, zf, totalU
+		
 	IF(PRESENT(t)) THEN
-		CALL totalPotential(state(1), state(2), state(3), totalU, t)
+		IF(PRESENT(n)) THEN
+		!	ALLOCATE(trX(n))
+		!	ALLOCATE(trY(n))
+		!	ALLOCATE(trZ(n))
+			CALL shiftTrace(t,trX,trY,trZ, n, state(1),state(2),state(3), xf,yf,zf)
+		ELSE
+			xf = state(1)
+			yf = state(2)
+			zf = state(3)
+		END IF
+		CALL totalPotential(xf, yf, zf, totalU, t)
 	ELSE
-		CALL totalPotential(state(1), state(2), state(3), totalU)
+		CALL totalPotential(state(1), state(2), state(3), totalU, 0.0_8)
 	END IF
 	
 	energy = totalU + SUM(state(4:6)*state(4:6))/(2.0_8*MASS_N)

@@ -192,7 +192,9 @@ SUBROUTINE check_upscatter(prevState, state, blockHit)
 				SHAPE(rotation))
 	blockSize = (/ 0.0127_8, 0.0127_8, 0.00635_8 /)
 	!blockPos = (/ 0.2207_8, 0.127_8, -1.4431_8/)
-	blockPos = (/ 0.2175882546128424, 0.1264454150954313, -1.436798256096196 /)
+	blockPos = (/ 0.2175882546128424, 0.1264454150954313, -1.436798256096196 /) !block raised by 0.7 mm (most physical)
+	!blockPos = (/ 0.2172351487533068, 0.1263824834750547, -1.436083164589382 /) !block raised by 1.5 mm 
+	!blockPos = (/ 0.2165730752666775, 0.1262644866848486, -1.434742368014104 /) ! block raised by 3.0 mm
 	fracTravel = 0.0_8
 	
 	!Shift the neutron position to "block coordinates"
@@ -510,7 +512,7 @@ SUBROUTINE trackDaggerAndBlock(state, holdT)
 	DO i=1,numSteps,1
 		prevState = state
 		CALL symplecticStep(state, dt, energy, t)
-		t = t + dt
+		!t = t + dt
 		CALL check_upscatter(prevState, state, blockHit)
 		IF (blockHit) THEN
 			nBlockHit = nBlockHit + 1
@@ -523,7 +525,7 @@ SUBROUTINE trackDaggerAndBlock(state, holdT)
 	DO
 		prevState = state
 		CALL symplecticStep(state, dt, energy, t)
-		t = t + dt
+		!t = t + dt
 		
 		IF ((.NOT. blockHit) .AND. (.NOT. dagHit)) THEN
 			CALL check_upscatter(prevState, state, blockHit) 
@@ -602,6 +604,147 @@ SUBROUTINE trackDaggerAndBlock(state, holdT)
 		END IF
 	END DO
 END SUBROUTINE trackDaggerAndBlock
+
+SUBROUTINE trackDaggerAndBlockHeating(state, holdT, trX,trY,trZ,n)
+
+	USE symplecticInt
+	USE constants
+	USE forcesAndPotential
+	USE convertTrace
+	IMPLICIT NONE
+	
+	REAL(KIND=PREC), DIMENSION(6), INTENT(INOUT) :: state
+	REAL(KIND=PREC), INTENT(IN), OPTIONAL :: holdT
+	REAL(KIND=PREC), INTENT(IN), ALLOCATABLE, &
+						DIMENSION(:), OPTIONAL :: trX(:), trY(:), trZ(:)
+	INTEGER, INTENT(IN), OPTIONAL :: n
+	
+	INTEGER :: i, numSteps, nHit, nHitHouseLow, nHitHouseHigh, nBlockHit
+	LOGICAL :: blockHit, dagHit
+	REAL(KIND=PREC) :: t, fracTravel, predX, predZ, energy, zOff, zeta, theta
+	REAL(KIND=PREC) :: cleaningTime, settlingTime, absProb, absU, deathTime, predY
+	REAL(KIND=PREC), DIMENSION(6) :: prevState
+	
+	nHit = 0
+	nHitHouseLow = 0
+	nHitHouseHigh = 0
+	nBlockHit = 0
+	blockHit = .FALSE.	
+	dagHit = .FALSE. 
+	t = 0.0_8
+	
+	theta = ACOS(state(6)/SQRT(state(4)**2 + state(5)**2 + state(6)**2))
+	
+	!Hard coded in cleaning time, defaults to 20s hold
+	cleaningTime = 50.0_8 
+	IF (PRESENT(holdT)) THEN
+		settlingTime = cleaningTime + holdT
+	ELSE
+		settlingTime = cleaningTime + 20.0_8
+	END IF 
+		
+	!Functionality for neutron decay. Presently commented out, set to kill after 2000s
+	!CALL RANDOM_NUMBER(deathTime)
+	!deathTime = -877.7*LOG(deathTime)
+	deathTime = 2000.0
+
+	numSteps = settlingTime/dt
+	DO i=1,numSteps,1
+		prevState = state
+		CALL symplecticStep(state, dt, energy, t, trX, trY, trZ,n)
+		!t = t + dt
+		CALL check_upscatter(prevState, state, blockHit)
+		IF (blockHit) THEN
+			nBlockHit = nBlockHit + 1
+			WRITE(2) t, energy, nHit, nHitHouseLow, nHitHouseHigh, &
+				nBlockHit, state(1), state(2), state(3), theta
+			blockHit = .FALSE.
+		END IF
+	END DO
+	
+	DO
+		prevState = state
+		CALL symplecticStep(state, dt, energy, t, trX, trY, trZ,n)
+		!t = t + dt
+		
+		IF ((.NOT. blockHit) .AND. (.NOT. dagHit)) THEN
+			CALL check_upscatter(prevState, state, blockHit) 
+			IF (blockHit) THEN
+				nBlockHit = nBlockHit + 1
+				WRITE(2) t, energy, nHit, nHitHouseLow, nHitHouseHigh, &
+					nBlockHit, state(1), state(2), state(3), theta
+				blockHit = .FALSE.
+			END IF 
+		END IF
+		IF (blockHit) THEN 
+			PRINT *, "hit a block!"
+			EXIT
+		END IF
+		
+		IF (SIGN(1.0_8, state(2)) .NE. SIGN(1.0_8, prevState(2))) THEN
+			fracTravel = ABS(prevState(2))/(ABS(state(2)) + ABS(prevState(2)))
+			predX = prevState(1) + fracTravel * (state(1) - prevState(1))
+			predZ = prevState(3) + fracTravel * (state(3) - prevState(3))
+			
+			CALL zOffDipCalc(t - settlingTime, zOff)
+			IF (predX > 0.0_8) THEN
+				zeta = 0.5_8 - SQRT(predX**2 + (ABS(predZ - zOff) - 1.0_8)**2)
+			ELSE
+				zeta = 1.0_8 - SQRT(predX**2 + (ABS(predZ - zOff) - 0.5_8)**2)
+			END IF
+			!TD offset from central axis: 6" ~0.1524m
+			IF (predX > -0.3524_8 .AND. predX < 0.0476_8 .AND. &
+					zeta > 0.0_8 .AND. predZ < (-1.5_8 + zOff + 0.2_8)) THEN
+				nHit = nHit + 1
+				CALL absorb(state(5)*state(5)/(2.0_8*MASS_N), absProb)
+				CALL RANDOM_NUMBER(absU)
+				IF (absU < absProb) THEN
+					WRITE(1) t - settlingTime, energy, state(5)*state(5)/(2.0_8*MASS_N), &
+						predX, 0.0_8, predZ, zOff, nHit, nHitHouseLow, nHitHouseHigh, nBlockHit, &
+						theta
+					dagHit = .TRUE.
+					EXIT
+				END IF
+                
+				IF (prevState(2) > 0 .AND. prevState(5) < 0) THEN
+					CALL reflect(prevState, (/0.0_8, 1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
+					state = prevState
+				ELSE IF (prevState(2) < 0 .AND. prevState(5) > 0) THEN
+					CALL reflect(prevState, (/0.0_8, -1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
+					state = prevState
+				ELSE
+					PRINT *, "UHOH"
+				END IF
+            ELSE IF (predZ >= (-1.5_8 + zOff + 0.2_8) .AND. &
+					predZ < (-1.5_8 + zOff + 0.2_8 + 0.14478_8) .AND. &
+					ABS(predX + 0.1524_8) < (0.40_8 + 2.0179_8*(predZ + 1.5_8 - zOff - 0.2_8))/2.0_8) THEN
+				IF (prevState(2) > 0 .AND. prevState(5) < 0) THEN
+					CALL reflect(prevState, (/0.0_8, 1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
+					state = prevState
+				ELSE IF (prevState(2) < 0 .AND. prevState(5) > 0) THEN
+				CALL reflect(prevState, (/0.0_8, -1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
+					state = prevState
+				END IF
+				nHitHouseLow = nHitHouseLow + 1
+			ELSE IF (predZ >= (-1.5_8 + zOff + 0.2_8 + 0.14478_8) .AND. &
+					predZ < (-1.5_8 + zOff + 0.2_8 + 0.2667_8) .AND. &
+					ABS(predX + 0.1524_8) < 0.69215_8/2.0_8) THEN
+				IF (prevState(2) > 0 .AND. prevState(5) < 0) THEN
+					CALL reflect(prevState, (/0.0_8, 1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
+					state = prevState
+				ELSE IF (prevState(2) < 0 .AND. prevState(5) > 0) THEN
+					CALL reflect(prevState, (/0.0_8, -1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
+					state = prevState
+				END IF
+				nHitHouseHigh = nHitHouseHigh + 1
+			END IF
+			IF (t-settlingTime > deathTime) THEN
+				EXIT
+			END IF
+		END IF
+	END DO
+END SUBROUTINE trackDaggerAndBlockHeating
+
 
 !-----------------Subroutines for debug purposes------------------------
 SUBROUTINE compPots()
@@ -729,12 +872,16 @@ SUBROUTINE trackAndPrint(state, sympT)
 	t = 0.0_8
 	totalU = 0.0_8
 	
-!	CALL calcEnergy(state, energy)
+	CALL calcEnergy(state, energy)
 	energy = 0.0
+
+	PRINT *, 0.0_8, state(1), state(2), state(3),&
+			state(4)/MASS_N, state(5)/MASS_N, state(6)/MASS_N, energy,&
+			totalU
 	
 	DO i=1,numSteps,1
 !		IF(t > 475.0_8 .AND. t < 480.0_8) THEN
-		IF(INT(dt*10_8*i)-INT(dt*10_8*(i-1)) .NE. 0) THEN
+		IF(INT(dt*100_8*i)-INT(dt*100_8*(i-1)) .NE. 0) THEN
 !		IF(1 .EQ. 1) THEN
 !			energy = totalU + SUM(state(1,4:6)**2)/(2.0_8*MASS_N)
 

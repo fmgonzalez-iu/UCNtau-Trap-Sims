@@ -1,7 +1,7 @@
 F95=gfortran
 FFLAGS=-cpp -g -I/usr/local/include
 VPATH=modules
-MODOBJ=constants.o forcesAndPotential.o symplecticInt.o trackGeometry.o testSubroutines.o
+MODOBJ=constants.o convertTrace.o forcesAndPotential.o symplecticInt.o trackGeometry.o testSubroutines.o
 #COBJ=modules/fields_fortran_dan.o modules/fields_nate.o
 COBJ=fields_nate.o
 LFLAGS=-L/usr/local/lib -lm

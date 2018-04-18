@@ -14,8 +14,8 @@
 #define MASS_N 1.674927471e-27
 #define GRAV 9.80665e0
 #define N_TERMS 3 //how far out to go in field ripple expansion
-#define FREQ 60
-#define AMPLITUDE 0.000020
+//#define FREQ 60
+//#define AMPLITUDE 0.000020
 //#define AMPLITUDE 0.000005
 //#define AMPLITUDE 0.000001
 #define KAPPA 1000
@@ -34,8 +34,8 @@ void force_(double *x_in, double *y_in, double *z_in, double *fx, double *fy, do
 
 	double gx=0.0, gy=0.0, gz=0.0, R, r, Rprime, rprime;
 	
-	R = 0.5 + 0.5/(1 + exp(-KAPPA*x)) + AMPLITUDE * sin(2*M_PI * FREQ * (*t));
-	r = 1.0 - 0.5/(1 + exp(-KAPPA*x)) + AMPLITUDE * sin(2*M_PI * FREQ * (*t));
+	R = 0.5 + 0.5/(1 + exp(-KAPPA*x));// + AMPLITUDE * sin(2*M_PI * FREQ * (*t));
+	r = 1.0 - 0.5/(1 + exp(-KAPPA*x));// + AMPLITUDE * sin(2*M_PI * FREQ * (*t));
 	Rprime = 0.5*KAPPA*(1.0 - 1.0/(1 + exp(-KAPPA*x)))*1.0/(1 + exp(-KAPPA*x));
 	rprime = -Rprime;
 
@@ -166,8 +166,8 @@ void fieldstrength_(double *x_in, double *y_in, double *z_in, double *totalB, do
 
 	double R, r, Rprime, rprime;
 
-	R = 0.5 + 0.5/(1 + exp(-KAPPA*x)) + AMPLITUDE * sin(2*M_PI * FREQ * (*t));
-	r = 1.0 - 0.5/(1 + exp(-KAPPA*x)) + AMPLITUDE * sin(2*M_PI * FREQ * (*t));
+	R = 0.5 + 0.5/(1 + exp(-KAPPA*x));// + AMPLITUDE * sin(2*M_PI * FREQ * (*t));
+	r = 1.0 - 0.5/(1 + exp(-KAPPA*x));// + AMPLITUDE * sin(2*M_PI * FREQ * (*t));
 	Rprime = 0.5*KAPPA*(1.0 - 1.0/(1 + exp(-KAPPA*x)))*1.0/(1 + exp(-KAPPA*x));
 	rprime = -Rprime;
 	
@@ -218,15 +218,17 @@ void potential_(double *x_in, double *y_in, double *z_in, double *totalU, double
 	double y = *y_in;
 	double z = *z_in;
 	double z_grav = *z_in;
-	
+
 	double R, r, Rprime, rprime;
 
-	R = 0.5 + 0.5/(1 + exp(-KAPPA*x)) + AMPLITUDE * sin(2*M_PI * FREQ * (*t));
-	r = 1.0 - 0.5/(1 + exp(-KAPPA*x)) + AMPLITUDE * sin(2*M_PI * FREQ * (*t));
+	R = 0.5 + 0.5/(1 + exp(-KAPPA*x));// + AMPLITUDE * sin(2*M_PI * FREQ * (*t));
+	r = 1.0 - 0.5/(1 + exp(-KAPPA*x));// + AMPLITUDE * sin(2*M_PI * FREQ * (*t));
+	Rprime = 0.5*KAPPA*(1.0 - 1.0/(1+exp(-KAPPA*x)))*1.0/(1 + exp(-KAPPA*x));
+	rprime = -Rprime;
 	
 	double rho = sqrt(y*y+z*z);
 	double r_zeta = sqrt((rho-R)*(rho-R)+x*x);
-
+	
 	if (z < -1.0 && r_zeta < r)
 	{
 		double eta = r*atan(x/(sqrt(y*y + z*z) - R));

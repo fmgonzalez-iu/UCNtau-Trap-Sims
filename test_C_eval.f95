@@ -1,29 +1,34 @@
 #include "modules/constants.h"
 
 PROGRAM track
-	USE mpi
+	!USE mpi
 	USE constants
 	USE testSubroutines
+	USE convertTrace
 	USE forcesAndPotential
 	USE trackGeometry
+	!USE lyapunov
 
 	IMPLICIT NONE
 	REAL(KIND=PREC) :: x, y, z, fx, fy, fz, totalU, energy, sympT
 	REAL(KIND=PREC) :: energy_start, energy_end, maxEgain
 	REAL(KIND=PREC) :: freq, height, holdTime
+	REAL(KIND=PREC), DIMENSION(:), ALLOCATABLE :: trX(:), trY(:), trZ(:)
 	REAL(KIND=PREC), ALLOCATABLE :: states(:,:)
+	REAL(KIND=PREC) :: res_lyap(17)
+	REAL(KIND=PREC) :: res_clean(10)
 	CHARACTER(LEN=256) :: arg, fName, fName2, rankString
-	INTEGER :: i, j, k, seedLen
+	INTEGER :: i, j, k, seedLen, seedOff, lengthTr
 	INTEGER, DIMENSION(32) :: rngSeed
 	INTEGER :: rankMPI, sizeMPI, tag, next, from, ierr, workerIt, trajPerWorker
 	INTEGER :: ntraj
 
-!	rankMPI = 1
-!	sizeMPI = 1
+	rankMPI = 1
+	sizeMPI = 1
 	
-	CALL MPI_INIT(ierr)
-	CALL MPI_COMM_RANK(MPI_COMM_WORLD, rankMPI, ierr)
-	CALL MPI_COMM_SIZE(MPI_COMM_WORLD, sizeMPI, ierr)
+!	CALL MPI_INIT(ierr)
+!	CALL MPI_COMM_RANK(MPI_COMM_WORLD, rankMPI, ierr)
+!	CALL MPI_COMM_SIZE(MPI_COMM_WORLD, sizeMPI, ierr)
 
 	IF (IARGC() .GT. 5 .OR. IARGC() .LT. 3) THEN
 		PRINT *, "Error! Not enough or too many arguments!"
@@ -65,10 +70,11 @@ PROGRAM track
 	trajPerWorker = ntraj/sizeMPI
 	
 !	minU = -2.4283243003838247e-26_8
-!	minU = -2.390245661413933e-26_8
+!	minU = -2.390245661413933e-26_8 !For lambda = 0.0508, brem=1.4
 	minU = -2.390352484438862e-26_8 !For lambda = 0.05114, brem=1.35
 	
 	ALLOCATE(states(ntraj,6))
+	!ALLOCATE(states(ntraj,3,6))
 		
 	PI=4.0e0_8*ATAN(1.0e0_8)
 	a(1)=.5153528374311229364e0_8
@@ -81,7 +87,8 @@ PROGRAM track
 	b(4)=.3340036032863214255e0_8
 
 	CALL RANDOM_SEED(size=seedLen)
-	IF (seedLen > 32) THEN
+	seedOff = 0
+	IF (seedLen + seedOff > 32) THEN
 		PRINT *, "Error! The requested length of seed is too long"
 		CALL EXIT(0)
 	END IF
@@ -90,26 +97,38 @@ PROGRAM track
 	DO i=2,seedLen,1
 		rngSeed(i) = MOD((48271*rngSeed(i-1)), 2147483647)
 	END DO
-	CALL RANDOM_SEED(put=rngSeed(1:seedLen))
+	CALL RANDOM_SEED(put=rngSeed(1+seedOff:seedLen+seedOff))
 
 	DO i=1,ntraj,1
-		!CALL randomPointTrap(states(i,1), states(i,2), states(i,3), states(i,4), states(i,5), states(i,6))
-		CALL randomPointTrapOptimum(states(i,1), states(i,2), states(i,3),&
-		 states(i,4), states(i,5), states(i,6))
+		CALL randomPointTrap(states(i,1), states(i,2), states(i,3), states(i,4), states(i,5), states(i,6))
+		!CALL randomPointTrapOptimum(states(i,1), states(i,2), states(i,3),&
+		! states(i,4), states(i,5), states(i,6))
+		!CALL createInitialTrajectories(states(i,:,:))
 	END DO
-	!DO i=1,30,1
-	DO i=trajPerWorker*rankMPI+1,trajPerWorker*(rankMPI+1),1
+	
+	CALL loadTrace(trX,trY,trZ,lengthTr)
+	!ALLOCATE trX(lengthTr)
+	!ALLOCATE trY(lengthTr)
+	!ALLOCATE trZ(lengthTr)
+	
+	DO i=1,30,1
+	!DO i=trajPerWorker*rankMPI+1,trajPerWorker*(rankMPI+1),1
 !		sympT = 0.0_8
 		IF (IARGC() .EQ. 3) THEN
 			!PRINT *, "Beginning runs no block"
 			CALL fixedEffDaggerHitTime(states(i, :),holdTime)
 		ELSE IF (IARGC() .GE. 4) THEN
 !			PRINT *, "Beginning runs with block"
-			CALL trackDaggerAndBlock(states(i, :),holdTime)
+			!CALL trackDaggerAndBlock(states(i, :),holdTime)
+			CALL trackDaggerAndBlockHeating(states(i, :),holdTime, trX,trY,trZ, lengthTr)
 		ELSE
 !			CALL MPI_FINALIZE(ierr)
 			CALL EXIT(0)
 		END IF 
+		!CALL calcLyapunov(states(i,:,:), res_lyap)
+		!WRITE(1), res_lyap
+!		CALL calcCleanTime(states(i,:,:), res_clean)
+!		WRITE(1), res_clean
 !		PRINT *, i
 !		CALL trackDaggerHitTimeFixedEff(states(i, :))
 	END DO
@@ -117,7 +136,7 @@ PROGRAM track
     
 !    CALL trackDaggerHitTime(states(ntraj, :))
     
-!    CALL trackAndPrint(states(ntraj,:))
+    !CALL trackAndPrint(states(ntraj,1,:))
 
 !	DO i=1,81,1 !Freq
 !		DO j=0,39,1 !Height

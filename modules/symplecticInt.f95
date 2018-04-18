@@ -4,7 +4,7 @@ MODULE symplecticInt
 
 CONTAINS
 
-SUBROUTINE symplecticStep(state, deltaT, energy, t)
+SUBROUTINE symplecticStep(state, deltaT, energy, t, trX,trY,trZ,lenTr)
 	!Take 1 step of length deltaT using symplectic integration scheme.
 	!See Candy & Rozmus 1991 and McLachlan & Atela 1992
 	USE constants
@@ -15,10 +15,21 @@ SUBROUTINE symplecticStep(state, deltaT, energy, t)
 	REAL(KIND=PREC), INTENT(IN) :: deltaT
 	REAL(KIND=PREC), INTENT(OUT) :: energy
 	REAL(KIND=PREC), OPTIONAL, INTENT(INOUT) :: t
-	!REAL(KIND=PREC), OPTIONAL, INTENT(IN) :: freq
+	REAL(KIND=PREC), INTENT(IN), ALLOCATABLE, &
+						DIMENSION(:), OPTIONAL :: trX(:), trY(:), trZ(:)
+	INTEGER, OPTIONAL :: lenTr
 
 	REAL(KIND=PREC) :: fx, fy, fz, totalU
 	INTEGER :: n
+	
+	!IF(PRESENT(lenTr)) THEN
+	!	ALLOCATE trX(lenTr)
+	!	ALLOCATE trY(lenTr)
+	!	ALLOCATE trZ(lenTr)
+	!END IF
+					
+	!REAL(KIND=PREC), OPTIONAL, INTENT(IN) :: freq
+
 	
 	!Only gets compiled if VARIABLE isn't defined at the top
 	!For each step of the integration,
@@ -26,7 +37,12 @@ SUBROUTINE symplecticStep(state, deltaT, energy, t)
 	!Unrolling the loop - first iteration gives energy but subsequent won't
 	n = 1
 	IF(PRESENT(t)) THEN
-		CALL totalForce(state(1), state(2), state(3), fx, fy, fz, totalU, t)
+		IF(PRESENT(lenTr)) THEN
+			CALL totalForce(state(1), state(2), state(3), fx, fy, fz, totalU, t, &
+							trX, trY, trZ, lenTr)
+		ELSE 
+			CALL totalForce(state(1), state(2), state(3), fx, fy, fz, totalU, t)
+		END IF
 		energy = totalU + SUM(state(4:6)*state(4:6))/(2.0_8*MASS_N)! &
 !			+ state(1)*GRAV*MASS_N
 		t = t + a(n)*deltaT
@@ -51,7 +67,12 @@ SUBROUTINE symplecticStep(state, deltaT, energy, t)
 	DO n=2,4,1
 		!Calc force
 		IF(PRESENT(t)) THEN
-			CALL totalForce(state(1), state(2), state(3), fx, fy, fz, totalU, t)
+			IF(PRESENT(lenTr)) THEN
+				CALL totalForce(state(1), state(2), state(3), fx, fy, fz, totalU, t, &
+								trX, trY, trZ, lenTr)
+			ELSE 
+				CALL totalForce(state(1), state(2), state(3), fx, fy, fz, totalU, t)
+			END IF
 			t = t + a(n)*deltaT
 		ELSE
 			CALL totalForce(state(1), state(2), state(3), fx, fy, fz, totalU)
