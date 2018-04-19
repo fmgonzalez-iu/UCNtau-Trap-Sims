@@ -82,8 +82,8 @@ SUBROUTINE loadTrace(x, y, z, n)
 	CLOSE(12)
 	
 	n = nX
-    PRINT *, "The number of events in heating file is: "
-	PRINT *, n	
+    !PRINT *, "The number of events in heating file is: "
+	!PRINT *, n	
 END SUBROUTINE loadTrace
 
 SUBROUTINE shiftTrace(t,trX,trY,trZ,n, xi,yi,zi, xf,yf,zf)
@@ -95,9 +95,10 @@ SUBROUTINE shiftTrace(t,trX,trY,trZ,n, xi,yi,zi, xf,yf,zf)
 	REAL(KIND=PREC), INTENT(OUT) :: xf, yf, zf
 	
 	INTEGER :: iLow, iHigh
-	REAL(KIND=PREC) :: sampDT, frac
+	REAL(KIND=PREC) :: sampDT, frac, heatFactor
 	
 	sampDT = 0.0004 !Constant sampling rate
+	heatFactor = 1.0 !"heating factor", or what to multiply our heating by. For no heating, set to 0.0!
 		
 	iLow  = FLOOR(t/sampDT)
 	iHigh = iLow + 1
@@ -105,9 +106,9 @@ SUBROUTINE shiftTrace(t,trX,trY,trZ,n, xi,yi,zi, xf,yf,zf)
 	iLow  = MOD(iLow,n) + 1 !convert to the actual amount -- add one for FORTRAN
 	iHigh = MOD(iHigh,n)+ 1
 	
-	xf = xi + trX(iLow) + frac*(trX(iHigh) - trX(iLow)) !shift our variables
-	yf = yi + trY(iLow) + frac*(trY(iHigh) - trY(iLow))
-	zf = zi + trZ(iLow) + frac*(trZ(iHigh) - trZ(iLow))
+	xf = xi + heatFactor * (trX(iLow) + frac*(trX(iHigh) - trX(iLow))) !shift our variables
+	yf = yi + heatFactor * (trY(iLow) + frac*(trY(iHigh) - trY(iLow)))
+	zf = zi + heatFactor * (trZ(iLow) + frac*(trZ(iHigh) - trZ(iLow)))
 
 END SUBROUTINE shiftTrace
 

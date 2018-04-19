@@ -21,7 +21,8 @@ PROGRAM track
 	INTEGER :: i, j, k, seedLen, seedOff, lengthTr
 	INTEGER, DIMENSION(32) :: rngSeed
 	INTEGER :: rankMPI, sizeMPI, tag, next, from, ierr, workerIt, trajPerWorker
-	INTEGER :: ntraj
+	INTEGER :: ntraj, nDips
+	LOGICAL :: pse
 
 	rankMPI = 1
 	sizeMPI = 1
@@ -30,9 +31,9 @@ PROGRAM track
 !	CALL MPI_COMM_RANK(MPI_COMM_WORLD, rankMPI, ierr)
 !	CALL MPI_COMM_SIZE(MPI_COMM_WORLD, sizeMPI, ierr)
 
-	IF (IARGC() .GT. 5 .OR. IARGC() .LT. 3) THEN
+	IF (IARGC() .GT. 7 .OR. IARGC() .LT. 3) THEN
 		PRINT *, "Error! Not enough or too many arguments!"
-		PRINT *, "timestep n_traj OUTFILE (OUTFILE2 holdTime)"
+		PRINT *, "timestep n_traj OUTFILE (OUTFILE2 holdTime nDips PSE?)"
 !		CALL MPI_FINALIZE(ierr)
 		CALL EXIT(0)
 	END IF
@@ -60,11 +61,21 @@ PROGRAM track
 		OPEN(UNIT=2, FILE=fName2, FORM='UNFORMATTED')
 	END IF
 	
-	IF (IARGC() .EQ. 5) THEN
+	IF (IARGC() .GE. 5) THEN
 		CALL GETARG(5, arg)
 		READ(arg,*) holdTime
 	ELSE
 		holdTime = 20.0_8
+	END IF
+	
+	IF (IARGC() .GE. 6) THEN
+		CALL GETARG(6, arg)
+		READ(arg,*) nDips
+		nDips = nDips + 1 !First "dip" is actually second bit of vector
+	END IF
+	
+	IF (IARGC() .GE. 7) THEN
+		pse = .TRUE.
 	END IF
 	
 	trajPerWorker = ntraj/sizeMPI
@@ -120,7 +131,14 @@ PROGRAM track
 		ELSE IF (IARGC() .GE. 4) THEN
 !			PRINT *, "Beginning runs with block"
 			!CALL trackDaggerAndBlock(states(i, :),holdTime)
-			CALL trackDaggerAndBlockHeating(states(i, :),holdTime, trX,trY,trZ, lengthTr)
+			IF (IARGC() .GE. 7) THEN
+			PRINT *, "Beginning runs with block and phase space evolution"
+				CALL trackDaggerAndBlockHeating(states(i, :),holdTime, trX,trY,trZ, lengthTr, &
+												nDips, pse)
+			ELSE IF (IARGC() .GE. 6) THEN
+				CALL trackDaggerAndBlockHeating(states(i, :),holdTime, trX,trY,trZ, lengthTr, &
+												nDips)
+			END IF
 		ELSE
 !			CALL MPI_FINALIZE(ierr)
 			CALL EXIT(0)

@@ -27,41 +27,67 @@ FUNCTION M(kn, knm1, z) RESULT(ret)
 END FUNCTION M
 
 !-----------------Subroutines called many times-------------------------
-SUBROUTINE zOffDipCalc(t, z, holdIn)
+SUBROUTINE zOffDipCalc(t, z, nDips, holdIn)
 	REAL(KIND=PREC), INTENT(IN) :: t
 	REAL(KIND=PREC), INTENT(OUT) :: z
+	INTEGER, OPTIONAL :: nDips
 	REAL(KIND=PREC), INTENT(IN), OPTIONAL :: holdIn
 	
-	INTEGER :: nDips, i
+	INTEGER :: i, pseDips
 	REAL(KIND=PREC) :: speed, holdT
-	REAL(KIND=PREC), DIMENSION(4) :: dipHeights, dipEnds
-			
+	REAL(KIND=PREC), DIMENSION(:), ALLOCATABLE :: dipHeights, dipEnds
+	
+	!holdIn is our PSE measurement flag
 	IF(PRESENT(holdIn)) THEN
 		holdT=holdIn
+		pseDips = 2
 	ELSE
 		holdT=900
+		pseDips = 0
 	END IF
-
-	!FUN PROJECT: Make this variable so we don't have to recompile to switch # of dips
-	nDips = 4 
 	
-	dipHeights = (/ 0.49_8, 0.380_8, 0.250_8, 0.010_8 /) !3 dip vectors -- from Octet_3dip.txt
-	dipEnds = (/ 0.0_8, 40.0_8, 60.0_8, 210.0_8 /) 
+	IF(PRESENT(nDips)) THEN
+		ALLOCATE(dipHeights(nDips+pseDips))
+		ALLOCATE(dipEnds(nDips+pseDips))
+	ELSE
+		nDips = 4 !Default to 4-Dip (which is really 3-Dip!)
+		ALLOCATE(dipHeights(nDips+pseDips))
+		ALLOCATE(dipEnds(nDips+pseDips))
+	END IF
+			
+	!The Dip Vectors are hard-coded in for now, with only 2 real options (3-dip,9-dip)	
+	IF (nDips .EQ. 4) THEN !3-Dips from Octet_3dip.txt
+		dipHeights((1+pseDips):(nDips+pseDips)) = (/ 0.49_8, 0.380_8, 0.250_8, 0.010_8 /) 
+		dipEnds((1+pseDips):(nDips+pseDips)) = (/ 0.0_8, 40.0_8, 60.0_8, 210.0_8 /) 
+	ELSE IF (nDips .EQ. 10) THEN !9-Dips from Octet_9dip.txt
+		dipHeights((1+pseDips):(nDips+pseDips)) = (/0.49, 0.380, 0.250, 0.180, 0.140, &
+													0.110, 0.080, 0.060, 0.040, 0.010/)
+		dipEnds((1+pseDips):(nDips+pseDips)) = (/0.0, 40.0, 80.0, 100.0, 120.0, 140.0, &
+													160.0, 180.0, 200.0, 300.0/) 
+	ELSE
+		PRINT *, "ERROR: Unknown number of dips in dagger movement! Ending run!"
+		STOP	
+	END IF
 	
-!    dipHeights = (/0.49, 0.380, 0.250, 0.180, 0.140, 0.110, 0.080, 0.060, 0.040, 0.010/) !9 dip vectors
-!    dipEnds = (/0.0,  40.0,  80.0,  100.0, 120.0, 140.0, 160.0, 180.0, 200.0, 300.0/) 
-
+	!Add in Phase Space Evolution dips
+	IF(PRESENT(holdIn)) THEN
+		dipHeights(1:2) = (/0.49, 0.250/)
+		dipEnds(1:2) = (/0.0_8, 200.0_8/)
+		DO i=3,(nDips+pseDips),1
+			dipEnds(i) = dipEnds(i)/2 + (200.0+holdT)
+		END DO
+	END IF
 !    dipHeights = (/0.49, 0.250, 0.49, 0.380, 0.250, 0.180, 0.140, 0.110, 0.080, 0.060, 0.040, 0.010/) 
 !    dipEnds =     (/0.0_8,  200.0_8,  200.0+holdT, 200.0+holdT+20.0, 200.0+holdT+40.0, 200.0+holdT+50.0, &
 !                    200.0+holdT+60.0, 200.0+holdT+70.0, 200.0+holdT+80.0, 200.0+holdT+90.0, &
 !                    200.0+holdT+100.0, 200.0+holdT+120.0/) !9 dip PSE vectors
     	
-	IF (t .GT. dipEnds(nDips)) THEN
+	IF (t .GT. dipEnds(nDips+pseDips)) THEN
 		z = 0.01
 		RETURN
 	END IF
 	
-	DO i=1,nDips,1
+	DO i=1,(nDips+pseDips),1
 		IF (dipEnds(i) .GT. t) THEN
 			EXIT
 		END IF
@@ -260,7 +286,11 @@ SUBROUTINE check_upscatter(prevState, state, blockHit)
 					MATMUL(invRotation,shiftPrevState(4:6)) /)
 			!PRINT *," Reflection in -y "
 		ELSE 
-			PRINT *, "UHOH"
+			CALL reflect(shiftPrevState, (/ 0.0_8, 0.0_8, -1.0_8 /), (/ 1.0_8, 0.0_8, 0.0_8 /))
+			state = (/ MATMUL(invRotation, shiftPrevState(1:3)) + blockPos, &
+					MATMUL(invRotation,shiftPrevState(4:6)) /) 
+			blockHit = .FALSE. !Managed to sneak under the block, don't record it...
+			!PRINT *, "UHOH"
 		END IF		
 	END IF
 END SUBROUTINE check_upscatter
@@ -605,7 +635,7 @@ SUBROUTINE trackDaggerAndBlock(state, holdT)
 	END DO
 END SUBROUTINE trackDaggerAndBlock
 
-SUBROUTINE trackDaggerAndBlockHeating(state, holdT, trX,trY,trZ,n)
+SUBROUTINE trackDaggerAndBlockHeating(state, holdT, trX,trY,trZ,n, nDips,pse)
 
 	USE symplecticInt
 	USE constants
@@ -617,7 +647,8 @@ SUBROUTINE trackDaggerAndBlockHeating(state, holdT, trX,trY,trZ,n)
 	REAL(KIND=PREC), INTENT(IN), OPTIONAL :: holdT
 	REAL(KIND=PREC), INTENT(IN), ALLOCATABLE, &
 						DIMENSION(:), OPTIONAL :: trX(:), trY(:), trZ(:)
-	INTEGER, INTENT(IN), OPTIONAL :: n
+	INTEGER, INTENT(IN), OPTIONAL :: n, nDips
+	LOGICAL, INTENT(IN), OPTIONAL :: pse
 	
 	INTEGER :: i, numSteps, nHit, nHitHouseLow, nHitHouseHigh, nBlockHit
 	LOGICAL :: blockHit, dagHit
@@ -625,6 +656,7 @@ SUBROUTINE trackDaggerAndBlockHeating(state, holdT, trX,trY,trZ,n)
 	REAL(KIND=PREC) :: cleaningTime, settlingTime, absProb, absU, deathTime, predY
 	REAL(KIND=PREC), DIMENSION(6) :: prevState
 	
+	!Initialize our variables, including our outgoing theta
 	nHit = 0
 	nHitHouseLow = 0
 	nHitHouseHigh = 0
@@ -632,21 +664,21 @@ SUBROUTINE trackDaggerAndBlockHeating(state, holdT, trX,trY,trZ,n)
 	blockHit = .FALSE.	
 	dagHit = .FALSE. 
 	t = 0.0_8
-	
 	theta = ACOS(state(6)/SQRT(state(4)**2 + state(5)**2 + state(6)**2))
 	
-	!Hard coded in cleaning time, defaults to 20s hold
+	!Hard coded in cleaning time
 	cleaningTime = 50.0_8 
-	IF (PRESENT(holdT)) THEN
+	!If we're not doing a phase-space evolution, then we can settle for a long time.
+	IF ((PRESENT(holdT)) .AND. (.NOT. PRESENT(pse))) THEN
 		settlingTime = cleaningTime + holdT
+	ELSE IF (PRESENT(pse)) THEN
+		settlingTime = cleaningTime
 	ELSE
-		settlingTime = cleaningTime + 20.0_8
+		settlingTime = cleaningTime + 20.0 !Default to 20s hold
 	END IF 
-		
-	!Functionality for neutron decay. Presently commented out, set to kill after 2000s
-	!CALL RANDOM_NUMBER(deathTime)
-	!deathTime = -877.7*LOG(deathTime)
-	deathTime = 2000.0
+			
+	!Functionality for neutron decay. Set to kill after 3000s
+	deathTime = 3000.0
 
 	numSteps = settlingTime/dt
 	DO i=1,numSteps,1
@@ -665,7 +697,6 @@ SUBROUTINE trackDaggerAndBlockHeating(state, holdT, trX,trY,trZ,n)
 	DO
 		prevState = state
 		CALL symplecticStep(state, dt, energy, t, trX, trY, trZ,n)
-		!t = t + dt
 		
 		IF ((.NOT. blockHit) .AND. (.NOT. dagHit)) THEN
 			CALL check_upscatter(prevState, state, blockHit) 
@@ -676,17 +707,19 @@ SUBROUTINE trackDaggerAndBlockHeating(state, holdT, trX,trY,trZ,n)
 				blockHit = .FALSE.
 			END IF 
 		END IF
-		IF (blockHit) THEN 
-			PRINT *, "hit a block!"
-			EXIT
-		END IF
 		
 		IF (SIGN(1.0_8, state(2)) .NE. SIGN(1.0_8, prevState(2))) THEN
 			fracTravel = ABS(prevState(2))/(ABS(state(2)) + ABS(prevState(2)))
 			predX = prevState(1) + fracTravel * (state(1) - prevState(1))
 			predZ = prevState(3) + fracTravel * (state(3) - prevState(3))
 			
-			CALL zOffDipCalc(t - settlingTime, zOff)
+			IF (PRESENT(pse)) THEN	!Phase-Space Evolution logical operator switch
+				CALL zOffDipCalc(t - settlingTime, zOff, nDips, holdT)
+			ELSE IF (PRESENT(nDips)) THEN
+				CALL zOffDipCalc(t - settlingTime, zOff, nDips)
+			ELSE
+				CALL zOffDipCalc(t - settlingTime, zOff)
+			END IF
 			IF (predX > 0.0_8) THEN
 				zeta = 0.5_8 - SQRT(predX**2 + (ABS(predZ - zOff) - 1.0_8)**2)
 			ELSE
