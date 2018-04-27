@@ -4,45 +4,43 @@ MODULE trackGeometry
 
 CONTAINS
 
-SUBROUTINE randomPointTrap(x,y,z,px,py,pz)
+SUBROUTINE randomPointTrap(x,y,z,px,py,pz, minE,maxE,dist)
+
 	USE forcesAndPotential
 	USE constants
 	IMPLICIT NONE
+	
 	REAL(KIND=PREC), INTENT(OUT) :: x, y, z, px, py, pz
-	REAL(KIND=PREC) :: zeta, maj_r, min_r, totalU, energy, max_p, maxEnergy, &
-					target_p, p_reject_val, p_len, en_reject_val
+	REAL(KIND=PREC), INTENT(IN) :: minE, maxE
+	INTEGER, INTENT(IN) :: dist
+	
+	REAL(KIND=PREC) :: minEnergy, maxEnergy, energy, totalU, & !Used for energy
+					target_p, p_len, max_p !Used for momentum scaling
 	REAL(KIND=PREC) :: u1, u2, phi, theta !Used for lambertian generation of track directions
-!	maxEnergy = GRAV*MASS_N*0.38_8 !Assume cleaning height of 38cm
-	!maxEnergy = GRAV*MASS_N*0.345_8 !Assume cleaning height of 38cm - 3.5cm to the zero energy point
-	maxEnergy = GRAV*MASS_N*0.3444136691300193_8
-    !A UCN of energy 34.5cm can reach 38cm w.r.t. the bottom of the trap.
+	
+	! Scale our input max/min to get our energies
+	minEnergy = GRAV*MASS_N*minE
+	maxEnergy = GRAV*MASS_N*maxE
 	max_p = SQRT(2.0_8*MASS_N*maxEnergy)
 	
+	! Generate particle above energy threshold
 	DO
 		CALL RANDOM_NUMBER(energy)
 		energy = maxEnergy * energy
-!		IF (energy < GRAV*MASS_N*0.021_8) THEN
-!			CYCLE
-!		END IF
-!		IF (energy > GRAV*MASS_N*0.1_8) THEN
-!			EXIT
-!		END IF
-		IF (energy > GRAV*MASS_N*0.01_8) THEN ! Forcing minimum energy > 1CM
+		IF (energy > minEnergy) THEN
 			EXIT
 		END IF
-!		CALL RANDOM_NUMBER(en_reject_val)
-!		IF (en_reject_val < energy/(GRAV*MASS_N)/0.1) THEN
-!			EXIT
-!		END IF
 	END DO
 
+	! Generate particle positon on trap door
 	DO
+		
 		z = -1.464413669130002_8
 		CALL RANDOM_NUMBER(x)
 		x = x*0.15_8 - 0.075_8
 		CALL RANDOM_NUMBER(y)
 		y = y*0.15_8 - 0.075_8
-
+		! Make sure said particle can reach this value
 		CALL totalPotential(x, y, z, totalU)
 		IF (totalU < energy) THEN
 			EXIT
@@ -50,39 +48,45 @@ SUBROUTINE randomPointTrap(x,y,z,px,py,pz)
 	END DO
 		
 	target_p = SQRT(2.0_8*MASS_N*(energy - totalU))
+	
+	! Set particle's direction
+	CALL RANDOM_NUMBER(u1)
+	CALL RANDOM_NUMBER(u2)
+	SELECT CASE (dist)
+		CASE (1)
+			!cos(theta)*sin(theta) distribution
+			theta = ASIN(SQRT(u1))
+			phi = 2.0_8 * PI * u2
+			
+			px = SIN(theta)*COS(phi)
+			py = SIN(theta)*SIN(phi)
+			pz = COS(theta)
+			
+		CASE (2)
+			!Isotropic emission
+			u1 = u1 * 2 - 1.0_8
+			phi = u2 * 2.0_8 * PI
+			
+			px = SQRT(1-u1*u1)*COS(phi)
+			py = SQRT(1-u1*u1)*SIN(phi)
+			pz = u1
+		
+		CASE (3) 
+			!Flat in theta emission -- DEFAULT from test_C_eval (for now)
+			theta = u1 * PI / 2.0_8
+			phi = 2.0_8 * PI * u2
 
-	!cos(theta)*sin(theta) distribution
-!    CALL RANDOM_NUMBER(u1)
-!    CALL RANDOM_NUMBER(u2)
-!    theta = ASIN(SQRT(u1))
-!    phi = 2.0_8 * PI * u2
-!
-!    px = SIN(theta)*COS(phi)
-!    py = SIN(theta)*SIN(phi)
-!    pz = COS(theta)
-
-
-    !Isotropic emission
-!    CALL RANDOM_NUMBER(u1)
-!    CALL RANDOM_NUMBER(u2)
-!    u1 = u1 * 2 - 1.0_8
-!    phi = 2.0_8 * PI * u2
-!
-!    px = SQRT(1-u1*u1)*COS(phi)
-!    py = SQRT(1-u1*u1)*SIN(phi)
-!    pz = u1
-
-
-	!Flat in theta emission
-    CALL RANDOM_NUMBER(u1)
-    CALL RANDOM_NUMBER(u2)
-    theta = u1 * PI / 2.0_8
-    phi = 2.0_8 * PI * u2
-
-    px = SIN(theta)*COS(phi)
-    py = SIN(theta)*SIN(phi)
-    pz = COS(theta)
-
+		    px = SIN(theta)*COS(phi)
+		    py = SIN(theta)*SIN(phi)
+		    pz = COS(theta)
+		
+		CASE DEFAULT
+			PRINT *, "ERROR: Something happened with generating distribution tracks!"
+			STOP
+	
+	END SELECT
+    
+    ! Scale momentum by energy    
     p_len = SQRT(px*px + py*py + pz*pz)
 
     px = (target_p/p_len)*px
@@ -99,6 +103,13 @@ SUBROUTINE randomPointTrapOptimum(x,y,z,px,py,pz)
     REAL(KIND=PREC) :: zeta, maj_r, min_r, totalU, energy, max_p, maxEnergy, &
                     target_p, p_reject_val, p_len, en_reject_val
     REAL(KIND=PREC) :: u1, u2, phi, theta !Used for lambertian generation of track directions
+    ! These maxenergy, minenergy things are kept from previous runs. With post-processing this
+    ! is less necessary, so I'm just dumping a bunch of commented numbers here
+    !	maxEnergy = GRAV*MASS_N*0.38_8 !Assume cleaning height of 38cm
+!	maxEnergy = GRAV*MASS_N*0.345_8 !Assume cleaning height of 38cm - 3.5cm to the zero energy point
+!	maxEnergy = GRAV*MASS_N*0.3444136691300193_8 !Assume Nathan's calc is 100% right
+!	maxEnergy = GRAV*MASS_N*0.45_8 !ASSUME NOTHING! CLEAN IT UP YOURSELF!
+    !A UCN of energy 34.5cm can reach 38cm w.r.t. the bottom of the trap.
     !maxEnergy = GRAV*MASS_N*0.345_8 !Assume cleaning height of 38cm - 3.5cm to the zero energy point
     maxEnergy = GRAV*MASS_N*0.3444136691300193_8 !More precise maxEnergy using more precise zmin.
     !A UCN of energy 34.5cm can reach 38cm w.r.t. the bottom of the trap.

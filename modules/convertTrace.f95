@@ -4,15 +4,17 @@ MODULE convertTrace
 
 CONTAINS
 
-SUBROUTINE loadTrace(x, y, z, n)
+SUBROUTINE loadTrace(x, y, z, n, heatFactor)
 	IMPLICIT NONE
 	INTEGER, INTENT(OUT) :: n
 	REAL(KIND=PREC), INTENT(OUT), DIMENSION(:), ALLOCATABLE :: x(:), y(:), z(:)
+	REAL(KIND=PREC), INTENT(IN) :: heatFactor
 	
 	INTEGER :: i, error, nX, nY, nZ
 	REAL(KIND=PREC) :: dummy
 	
 	OPEN(UNIT=10, FILE="./Chris_Acc_Trap_Displacements/xvals.bin", &
+	!OPEN(UNIT=10, FILE="/N/u/frangonz/BigRed2/UCNtau-Trap-Sims/CCW_Bin/xvals.bin", &
 		FORM="UNFORMATTED",ACCESS="STREAM", STATUS="OLD", &
 		ACTION = "READ")
 	!Figure how long the data set is:
@@ -28,13 +30,14 @@ SUBROUTINE loadTrace(x, y, z, n)
 	ALLOCATE(x(nX))
 	DO i=1,nX,1
 		READ(10,IOSTAT=error) x(i)
+		x(i) = x(i) * heatFactor
 		IF (error .NE. 0) EXIT
-		
 	END DO
 	CLOSE(10)
 	
 	! Same thing in Y
 	OPEN(UNIT=11, FILE="./Chris_Acc_Trap_Displacements/yvals.bin", &
+	!OPEN(UNIT=11, FILE="/N/u/frangonz/BigRed2/UCNtau-Trap-Sims/CCW_Bin/yvals.bin", &
 		FORM="UNFORMATTED", ACCESS="STREAM", STATUS="OLD", &
 		ACTION = "READ")
 	nY = 0
@@ -53,12 +56,14 @@ SUBROUTINE loadTrace(x, y, z, n)
 	ALLOCATE(y(nY))
 	DO i=1,nY
 		READ(11,IOSTAT=error) y(i)
+		y(i) = y(i) * heatFactor
 		IF (error .NE. 0) EXIT
 	END DO
 	CLOSE(11)
 	
 	! Same thing in Z
 	OPEN(UNIT=12, FILE="./Chris_Acc_Trap_Displacements/zvals.bin", &
+	!OPEN(UNIT=12, FILE="/N/u/frangonz/BigRed2/UCNtau-Trap-Sims/CCW_Bin/zvals.bin", &
 		FORM="UNFORMATTED", ACCESS="STREAM", STATUS="OLD", &
 		ACTION = "READ")
 	nZ = 0
@@ -77,6 +82,7 @@ SUBROUTINE loadTrace(x, y, z, n)
 	ALLOCATE(z(nZ))
 	DO i=1,nZ
 		READ(12, IOSTAT=error) z(i)
+		z(i) = z(i) * heatFactor
 		IF (error .NE. 0) EXIT
 	END DO
 	CLOSE(12)
@@ -95,10 +101,9 @@ SUBROUTINE shiftTrace(t,trX,trY,trZ,n, xi,yi,zi, xf,yf,zf)
 	REAL(KIND=PREC), INTENT(OUT) :: xf, yf, zf
 	
 	INTEGER :: iLow, iHigh
-	REAL(KIND=PREC) :: sampDT, frac, heatFactor
+	REAL(KIND=PREC) :: sampDT, frac
 	
 	sampDT = 0.0004 !Constant sampling rate
-	heatFactor = 1.0 !"heating factor", or what to multiply our heating by. For no heating, set to 0.0!
 		
 	iLow  = FLOOR(t/sampDT)
 	iHigh = iLow + 1
@@ -106,9 +111,9 @@ SUBROUTINE shiftTrace(t,trX,trY,trZ,n, xi,yi,zi, xf,yf,zf)
 	iLow  = MOD(iLow,n) + 1 !convert to the actual amount -- add one for FORTRAN
 	iHigh = MOD(iHigh,n)+ 1
 	
-	xf = xi + heatFactor * (trX(iLow) + frac*(trX(iHigh) - trX(iLow))) !shift our variables
-	yf = yi + heatFactor * (trY(iLow) + frac*(trY(iHigh) - trY(iLow)))
-	zf = zi + heatFactor * (trZ(iLow) + frac*(trZ(iHigh) - trZ(iLow)))
+	xf = xi + (trX(iLow) + frac*(trX(iHigh) - trX(iLow))) !shift our variables
+	yf = yi + (trY(iLow) + frac*(trY(iHigh) - trY(iLow)))
+	zf = zi + (trZ(iLow) + frac*(trZ(iHigh) - trZ(iLow)))
 
 END SUBROUTINE shiftTrace
 

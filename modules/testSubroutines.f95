@@ -4,7 +4,9 @@ MODULE testSubroutines
 
 CONTAINS
 
+!-----------------------------------------------------------------------
 !-----------------Dagger absorption property functions------------------
+!-----------------------------------------------------------------------
 FUNCTION WAVENUM(ePerp, u) RESULT(ret)
     COMPLEX, INTENT(IN) :: ePerp, u
     COMPLEX :: ret
@@ -26,62 +28,256 @@ FUNCTION M(kn, knm1, z) RESULT(ret)
     ret(2,2) = (1.0/2.0)*(1.0 + GAMMAK(kn,knm1))*EXP(-(0.0,1.0)*(knm1-kn)*z);
 END FUNCTION M
 
+!-----------------------------------------------------------------------
 !-----------------Subroutines called many times-------------------------
-SUBROUTINE zOffDipCalc(t, z, nDips, holdIn)
+!-----------------------------------------------------------------------
+! Check if we hit the cleaner and clean our neutrons
+SUBROUTINE cleaning(state, prevState, cleanZ, cleanHit)
+	
+	REAL(KIND=PREC), DIMENSION(6), INTENT(IN) :: state
+	REAL(KIND=PREC), DIMENSION(6), INTENT(IN) :: prevState
+	REAL(KIND=PREC), INTENT(IN) :: cleanZ
+	LOGICAL, INTENT(OUT) :: cleanHit
+			
+	! Initialize variables
+	cleanHit = .FALSE.
+			
+	! Stop trajectory if we pass through the cleaner, which is only on +x
+	! Cleaner has 100% efficiency. Could probably work in a reflection prob too?
+	IF (state(2) > 0) THEN
+		IF((prevState(3) < -1.5 + cleanZ) .AND. (state(3) > -1.5 + cleanZ)) THEN
+			cleanHit = .TRUE.
+		ELSE IF((prevState(3) > -1.5 + cleanZ) .AND. (state(3) < -1.5 + cleanZ)) THEN
+			cleanHit = .TRUE.
+		END IF
+	END IF
+		
+END SUBROUTINE cleaning
+! Check if we hit the dagger
+SUBROUTINE checkDagHit(state, prevState, zOff, dagHit)
+
+	REAL(KIND=PREC), DIMENSION(6), INTENT(INOUT) :: state, prevState
+	REAL(KIND=PREC), INTENT(IN) :: zOff
+	INTEGER, INTENT(OUT) :: dagHit
+	
+	REAL(KIND=PREC) :: fracTravel, predX, predZ, zeta, absU, absProb
+	
+	! Initialize variables:
+	! dagHit is a switch variable for position the neutron hits. Truth table:
+	!  -1: ERROR!!!
+	! 	0: No hits
+	! 	1: Hits the dagger, absorbed
+	!	2: Hits the dagger, reflected
+	! 	3: Hits the low housing
+	!	4: Hits the high housing
+	! I've copied this truth table into the main program for posterity.
+	dagHit = 0
+	
+	! Check if we've crossed the plane. This initialized dagger hit
+	IF (SIGN(1.0_8, state(2)) .NE. SIGN(1.0_8, prevState(2))) THEN
+		fracTravel = ABS(prevState(2))/(ABS(state(2)) + ABS(prevState(2)))
+		predX = prevState(1) + fracTravel * (state(1) - prevState(1))
+		predZ = prevState(3) + fracTravel * (state(3) - prevState(3))
+		
+		! calculate zeta
+		IF (predX > 0.0_8) THEN
+			zeta = 0.5_8 - SQRT(predX**2 + (ABS(predZ - zOff) - 1.0_8)**2)
+		ELSE
+			zeta = 1.0_8 - SQRT(predX**2 + (ABS(predZ - zOff) - 0.5_8)**2)
+		END IF
+		
+		! Check if we hit the dagger first.
+		!TD offset from central axis: 6" ~0.1524m
+		IF (predX > -0.3524_8 .AND. predX < 0.0476_8 .AND. &
+				zeta > 0.0_8 .AND. predZ < (-1.5_8 + zOff + 0.2_8)) THEN
+					
+			! Need to check if we are absorbed or reflected
+			CALL absorb(state(5)*state(5)/(2.0_8*MASS_N), absProb)
+			CALL RANDOM_NUMBER(absU)
+			IF (absU < absProb) THEN
+				! Hit the dagger and absorbed!
+				dagHit = 1
+			ELSE
+				! Hit the dagger and reflected!
+				dagHit = 2
+				IF (prevState(2) > 0 .AND. prevState(5) < 0) THEN
+					CALL reflect(prevState, (/0.0_8, 1.0_8, 0.0_8/), &
+											(/0.0_8, 0.0_8, 1.0_8/))
+					state = prevState
+				ELSE IF (prevState(2) < 0 .AND. prevState(5) > 0) THEN
+					CALL reflect(prevState, (/0.0_8, -1.0_8, 0.0_8/), &
+											(/0.0_8, 0.0_8, 1.0_8/))
+					state = prevState
+				ELSE
+					! ERROR FLAG!!!
+					dagHit = -1
+				END IF
+			END IF
+		! Now, check if we hit the housing low			
+		ELSE IF (predZ >= (-1.5_8 + zOff + 0.2_8) .AND. &
+				predZ < (-1.5_8 + zOff + 0.2_8 + 0.14478_8) .AND. &
+				ABS(predX + 0.1524_8) < (0.40_8 + 2.0179_8* &
+										(predZ+1.5_8- zOff-0.2_8))/2.0_8) THEN
+			
+			dagHit = 3
+			IF (prevState(2) > 0 .AND. prevState(5) < 0) THEN
+				CALL reflect(prevState, (/0.0_8, 1.0_8, 0.0_8/), &
+										(/0.0_8, 0.0_8, 1.0_8/))
+				state = prevState
+			ELSE IF (prevState(2) < 0 .AND. prevState(5) > 0) THEN
+				CALL reflect(prevState, (/0.0_8, -1.0_8, 0.0_8/), &
+										(/0.0_8, 0.0_8, 1.0_8/))
+				state = prevState
+			ELSE
+				! ERROR FLAG!!!
+				dagHit = -1
+			END IF
+		! Finally, check if we hit the housing high
+		ELSE IF (predZ >= (-1.5_8 + zOff + 0.2_8 + 0.14478_8) .AND. &
+				predZ < (-1.5_8 + zOff + 0.2_8 + 0.2667_8) .AND. &
+				ABS(predX + 0.1524_8) < 0.69215_8/2.0_8) THEN
+			
+			dagHit = 4	
+			IF (prevState(2) > 0 .AND. prevState(5) < 0) THEN
+				CALL reflect(prevState, (/0.0_8, 1.0_8, 0.0_8/), &
+										(/0.0_8, 0.0_8, 1.0_8/))
+				state = prevState
+			ELSE IF (prevState(2) < 0 .AND. prevState(5) > 0) THEN
+				CALL reflect(prevState, (/0.0_8, -1.0_8, 0.0_8/), &
+										(/0.0_8, 0.0_8, 1.0_8/))
+				state = prevState
+			ELSE
+				! ERROR FLAG!!!
+				dagHit = -1
+			END IF
+			
+		END IF
+	END IF
+
+END SUBROUTINE checkDagHit
+! Calculate dagger position
+SUBROUTINE zOffDipCalc(t, z, nDips, holdIn, pseType)
+
 	REAL(KIND=PREC), INTENT(IN) :: t
 	REAL(KIND=PREC), INTENT(OUT) :: z
-	INTEGER, OPTIONAL :: nDips
+	INTEGER, OPTIONAL :: nDips, pseType
 	REAL(KIND=PREC), INTENT(IN), OPTIONAL :: holdIn
-	
+
 	INTEGER :: i, pseDips
 	REAL(KIND=PREC) :: speed, holdT
 	REAL(KIND=PREC), DIMENSION(:), ALLOCATABLE :: dipHeights, dipEnds
+	LOGICAL :: normRun
 	
-	!holdIn is our PSE measurement flag
-	IF(PRESENT(holdIn)) THEN
-		holdT=holdIn
-		pseDips = 2
+	!I've introduced the mapping integer 'pseType' as a flag. Truth table:
+	!	CASE 1: Normal running
+	!	CASE 2: Deep cleaning (clean at 25 cm) [for phase space evolution]
+	!	CASE 3: Height dependent time constant data
+	!NB: if pseType is present, then so is holdIn
+	IF(PRESENT(pseType)) THEN
+		SELECT CASE (pseType)
+			CASE (1)
+				normRun = .TRUE.
+				holdT = holdIn
+				pseDips = 0
+			CASE (2)
+				normRun = .TRUE.
+				holdT = holdIn
+				pseDips = 2
+			CASE (3)
+				normRun = .FALSE.
+				holdT = holdIn
+				pseDips = 0
+		END SELECT
 	ELSE
-		holdT=900
+		normRun = .TRUE.
+		holdT = 900.0
 		pseDips = 0
 	END IF
-	
-	IF(PRESENT(nDips)) THEN
-		ALLOCATE(dipHeights(nDips+pseDips))
-		ALLOCATE(dipEnds(nDips+pseDips))
-	ELSE
+		
+	IF(.NOT. PRESENT(nDips)) THEN
 		nDips = 4 !Default to 4-Dip (which is really 3-Dip!)
-		ALLOCATE(dipHeights(nDips+pseDips))
-		ALLOCATE(dipEnds(nDips+pseDips))
-	END IF
-			
-	!The Dip Vectors are hard-coded in for now, with only 2 real options (3-dip,9-dip)	
-	IF (nDips .EQ. 4) THEN !3-Dips from Octet_3dip.txt
-		dipHeights((1+pseDips):(nDips+pseDips)) = (/ 0.49_8, 0.380_8, 0.250_8, 0.010_8 /) 
-		dipEnds((1+pseDips):(nDips+pseDips)) = (/ 0.0_8, 40.0_8, 60.0_8, 210.0_8 /) 
-	ELSE IF (nDips .EQ. 10) THEN !9-Dips from Octet_9dip.txt
-		dipHeights((1+pseDips):(nDips+pseDips)) = (/0.49, 0.380, 0.250, 0.180, 0.140, &
-													0.110, 0.080, 0.060, 0.040, 0.010/)
-		dipEnds((1+pseDips):(nDips+pseDips)) = (/0.0, 40.0, 80.0, 100.0, 120.0, 140.0, &
-													160.0, 180.0, 200.0, 300.0/) 
-	ELSE
-		PRINT *, "ERROR: Unknown number of dips in dagger movement! Ending run!"
-		STOP	
 	END IF
 	
-	!Add in Phase Space Evolution dips
-	IF(PRESENT(holdIn)) THEN
+	! Previous switches allow us to determine the number of dips we need. 	
+	ALLOCATE(dipHeights(nDips+pseDips))
+	ALLOCATE(dipEnds(nDips+pseDips))
+			
+	! Our heights are hard-coded in, but we can use the previous cases to choose between them.
+	IF (normRun) THEN
+		! Select number of dips from normal running
+		SELECT CASE (nDips)
+			CASE (4) !3-Dips from Octet_3dip.txt
+				dipHeights((1+pseDips):(nDips+pseDips)) = &
+									(/ 0.49_8, 0.380_8, 0.250_8, 0.010_8 /) 
+				dipEnds((1+pseDips):(nDips+pseDips)) = &
+									(/ 0.0_8, 40.0_8, 60.0_8, 210.0_8 /) 
+			CASE (10)!9-Dips from Octet_9dip.txt
+				dipHeights((1+pseDips):(nDips+pseDips)) = &
+									(/0.49, 0.380, 0.250, 0.180, 0.140, &
+										0.110, 0.080, 0.060, 0.040, 0.010/)
+				dipEnds((1+pseDips):(nDips+pseDips)) = &
+									(/0.0, 40.0, 80.0, 100.0, 120.0, 140.0, &
+										160.0, 180.0, 200.0, 300.0/) 
+			CASE DEFAULT
+				PRINT *, "ERROR: Unknown number of dips in dagger movement! Ending run!"
+				STOP
+		END SELECT
+	ELSE 
+		! Select number of dips for time constant runs
+		! Automate this??? -- No good easy way, it's actually a weird distribution of heights
+		SELECT CASE (nDips)
+			CASE (4) 
+				dipHeights = (/0.490, 0.380, 0.250, 0.010/)
+				dipEnds = (/0.0, 40.0, 400.0, 500.0/)
+			CASE (5)
+				dipHeights = (/0.490, 0.380, 0.250, 0.180, 0.010/)
+				dipEnds = (/0.0, 40.0, 80.0, 400.0, 500.0/)
+			CASE (6) 
+				dipHeights = (/0.490, 0.380, 0.250, 0.180, 0.140, &
+								0.010/)
+				dipEnds = (/0.0, 40.0, 80.0, 100.0, 400.0, &
+								500.0 /)
+			CASE (7)
+				dipHeights = (/0.490, 0.380, 0.250, 0.180, 0.140, &
+								0.110, 0.010 /)
+				dipEnds = (/0.0, 40.0, 80.0, 100.0, 120.0, &
+							400.0, 500.0/)
+			CASE (8)
+				dipHeights = (/0.490, 0.380, 0.250, 0.180, 0.140, &
+								0.110, 0.010 /)
+				dipEnds = (/0.0, 40.0, 80.0, 100.0, 120.0, &
+							400.0, 500.0/)
+			CASE (9)
+				dipHeights = (/0.490, 0.380, 0.250, 0.180, 0.140, &
+								0.110, 0.080, 0.060, 0.010/)
+				dipEnds = (/0.0, 40.0, 80.0, 100.0, 120.0, &
+							140.0, 160.0, 400.0, 500.0/)
+			CASE (10)
+				dipHeights = (/0.490, 0.380, 0.250, 0.180, 0.140, &
+								0.110, 0.080, 0.060, 0.040, 0.010/)
+				dipEnds = (/0.0, 40.0, 80.0, 100.0, 120.0, &
+							140.0, 160.0, 180.0, 400.0, 500.0/)
+			CASE (11)
+				! Case 11 is weird, since it double drops 0.01 
+				dipHeights = (/0.490, 0.380, 0.250, 0.180, 0.140, &
+								0.110, 0.080, 0.060, 0.040, 0.010, 0.010/)
+				dipEnds = (/0.0, 40.0, 80.0, 100.0, 120.0, &
+							140.0, 160.0, 180.0, 200.0, 400.0, 500.0/)
+			CASE DEFAULT
+				PRINT *, "ERROR: Unknown number of dips in dagger movement! Ending run!"
+				STOP
+		END SELECT
+	END IF
+	
+	!Check if we're doing deep cleaning
+	IF(pseDips .EQ. 2) THEN
 		dipHeights(1:2) = (/0.49, 0.250/)
 		dipEnds(1:2) = (/0.0_8, 200.0_8/)
 		DO i=3,(nDips+pseDips),1
 			dipEnds(i) = dipEnds(i)/2 + (200.0+holdT)
 		END DO
 	END IF
-!    dipHeights = (/0.49, 0.250, 0.49, 0.380, 0.250, 0.180, 0.140, 0.110, 0.080, 0.060, 0.040, 0.010/) 
-!    dipEnds =     (/0.0_8,  200.0_8,  200.0+holdT, 200.0+holdT+20.0, 200.0+holdT+40.0, 200.0+holdT+50.0, &
-!                    200.0+holdT+60.0, 200.0+holdT+70.0, 200.0+holdT+80.0, 200.0+holdT+90.0, &
-!                    200.0+holdT+100.0, 200.0+holdT+120.0/) !9 dip PSE vectors
-    	
+	
 	IF (t .GT. dipEnds(nDips+pseDips)) THEN
 		z = 0.01
 		RETURN
@@ -101,7 +297,7 @@ SUBROUTINE zOffDipCalc(t, z, nDips, holdIn)
         z = dipHeights(i)
 	END IF
 END SUBROUTINE zOffDipCalc
-
+! General reflection subroutine
 SUBROUTINE reflect(state, norm, tang)
 	USE trackGeometry
 	USE constants
@@ -135,7 +331,7 @@ SUBROUTINE reflect(state, norm, tang)
 	state(6) = state(6) * pTarget/pLen
 	
 END SUBROUTINE reflect
-
+! General absorption subroutine
 SUBROUTINE absorb(ePerp, prob)
     USE constants
     REAL(KIND=PREC), INTENT(IN) :: ePerp
@@ -163,7 +359,7 @@ SUBROUTINE absorb(ePerp, prob)
     pots(4) = CMPLX(vzns, -wzns)
     zs(1) = (0.0, 0.0)
     zs(2) = (0.0, 0.0)
-    zs(3) = (4.6e-9)
+    zs(3) = (5.76556e-9) !This is the Boron layer thickness
     zs(4) = (10000e-9)
     mbar(1,1) = (1, 0)
     mbar(1,2) = (0, 0)
@@ -176,8 +372,8 @@ SUBROUTINE absorb(ePerp, prob)
     
     prob = 1.0_8 - REALPART(CONJG(-mbar(2,1)/mbar(2,2))*(-mbar(2,1)/mbar(2,2)))
 END SUBROUTINE absorb
-
-SUBROUTINE check_upscatter(prevState, state, blockHit)
+! Check block scattering. Set blockScale to 0.0 to turn this off.
+SUBROUTINE check_upscatter(prevState, state, blockScale, blockHit)
 
 	USE constants
 	USE forcesAndPotential
@@ -185,13 +381,18 @@ SUBROUTINE check_upscatter(prevState, state, blockHit)
 	
 	REAL(KIND=PREC), INTENT(IN), DIMENSION(6) :: prevState
 	REAL(KIND=PREC), INTENT(INOUT), DIMENSION(6) :: state
+	REAL(KIND=PREC), INTENT(IN) :: blockScale
 	LOGICAL, INTENT(INOUT) :: blockHit
 		
+	INTEGER :: ii
 	REAL(KIND=PREC) :: hitU, upscatterProb
 	REAL(KIND=PREC), DIMENSION(6) :: shiftPrevState, shiftState
 	REAL(KIND=PREC), DIMENSION(3,3) :: rotation, invRotation
 	REAL(KIND=PREC), DIMENSION(3) :: blockSize, blockPos, fracTravel
 		
+	! These numbers are calculated in a Mathematica notebook.
+	! I'm keeping the matrices in here because I don't want to lose them, even if they're slightly unphysical.
+	
 	!rotation = RESHAPE((/ 0.3052294878125326_8, 0.9441621677380962_8, 0.1240675653899834_8, &
 	!				-0.9392750072476546_8, 0.3199526527130549_8, -0.1240675653899834_8, &
 	!				-0.1568356481467703_8, -0.07866448394274296_8, 0.9844869112570286_8 /),&
@@ -216,14 +417,19 @@ SUBROUTINE check_upscatter(prevState, state, blockHit)
 					0.8070370832294234_8, 0.5852378206028751_8, -0.07866452547073647_8, &
 					0.3170227597175610_8, -0.3170224470581768_8, 0.8938643835182667_8 /), &
 				SHAPE(rotation))
-	blockSize = (/ 0.0127_8, 0.0127_8, 0.00635_8 /)
 	!blockPos = (/ 0.2207_8, 0.127_8, -1.4431_8/)
 	blockPos = (/ 0.2175882546128424, 0.1264454150954313, -1.436798256096196 /) !block raised by 0.7 mm (most physical)
 	!blockPos = (/ 0.2172351487533068, 0.1263824834750547, -1.436083164589382 /) !block raised by 1.5 mm 
 	!blockPos = (/ 0.2165730752666775, 0.1262644866848486, -1.434742368014104 /) ! block raised by 3.0 mm
-	fracTravel = 0.0_8
+	
+	! Size of block -- set with a scaling factor
+	blockSize = (/ 0.0127_8, 0.0127_8, 0.00635_8 /)
+	DO ii=1,3,1
+		blockSize(ii) = blockScale*blockSize(ii)
+	END DO
 	
 	!Shift the neutron position to "block coordinates"
+	fracTravel = 0.0_8
 	shiftPrevState = (/ MATMUL(rotation, prevState(1:3) - blockPos), MATMUL(rotation,prevState(4:6)) /)
 	shiftState = (/ MATMUL(rotation, state(1:3) - blockPos), MATMUL(rotation,state(4:6)) /)
 	
@@ -234,6 +440,7 @@ SUBROUTINE check_upscatter(prevState, state, blockHit)
 		state = state
 	ELSE
 		blockHit = .TRUE.
+		! See how far we've traveled through the block. If we're purely inside or outside, this is zero
 		fracTravel(1) = (SIGN(blockSize(1), shiftState(1)) - shiftPrevState(1)) / &
 						ABS(shiftState(1) - shiftPrevState(1))
 		IF (ABS(fracTravel(1)) > 1) THEN
@@ -295,347 +502,10 @@ SUBROUTINE check_upscatter(prevState, state, blockHit)
 	END IF
 END SUBROUTINE check_upscatter
 
-!-----------------Subroutines that track neutrons-----------------------
-SUBROUTINE trackDaggerHitTime(state, holdT)
-	USE symplecticInt
-	USE constants
-	USE forcesAndPotential
-	IMPLICIT NONE
-	REAL(KIND=PREC), DIMENSION(6), INTENT(INOUT) :: state
-	REAL(KIND=PREC), INTENT(IN), OPTIONAL :: holdT
-	
-	REAL(KIND=PREC) :: t, fracTravel, predX, predZ, energy, zOff, zeta
-	REAL(KIND=PREC) :: cleaningTime, settlingTime
-	REAL(KIND=PREC), DIMENSION(6) :: prevState
-	REAL(KIND=4), DIMENSION(50) :: hitT, hitE
-		
-	INTEGER :: i, numSteps, nHit
-	
-	nHit = 0
-	hitT = 0.0_8
-	hitE = 0.0_8
-	t = 0.0_8
-	
-	!Hard coded in cleaning time, defaults to a 20s hold.
-	cleaningTime = 50.0_8
-	IF (PRESENT(holdT)) THEN
-		settlingTime = cleaningTime + holdT
-	ELSE
-		settlingTime = cleaningTime + 20.0_8
-	END IF
-	
-	numSteps = settlingTime/dt
-	DO i=1,numSteps,1
-		CALL symplecticStep(state, dt, energy)
-		t = t + dt
-	END DO
-		
-	DO
-		prevState = state
-		CALL symplecticStep(state, dt, energy)
-		t = t + dt
-		IF (SIGN(1.0_8, state(2)) .NE. SIGN(1.0_8, prevState(2))) THEN
-			fracTravel = ABS(prevState(2))/(ABS(state(2)) + ABS(prevState(2)))
-			predX = prevState(1) + fracTravel * (state(1) - prevState(1))
-			predZ = prevState(3) + fracTravel * (state(3) - prevState(3))		
-			
-			CALL zOffDipCalc(t - settlingTime, zOff)
-			IF (predX > 0.0_8) THEN
-				zeta = 0.5_8 - SQRT(predX**2 + (ABS(predZ - zOff) - 1.0_8)**2)
-			ELSE
-				zeta = 1.0_8 - SQRT(predX**2 + (ABS(predZ - zOff) - 0.5_8)**2)
-			END IF
-			!TD offset from central axis: 6" ~0.1524m
-		IF (predX > -0.3524_8 .AND. predX < 0.0476_8 .AND. zeta > 0.0_8 .AND. predZ < (-1.5_8 + zOff + 0.2_8)) THEN
-			nHit = nHit + 1	
-			hitT(nHit) = t - settlingTime
-			hitE(nHit) = state(5)*state(5)/(2.0_8*MASS_N)
-			IF (nHit .EQ. 50) THEN
-				EXIT
-			END IF
-			IF (prevState(2) > 0 .AND. prevState(5) < 0) THEN
-				CALL reflect(prevState, (/0.0_8, 1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
-				state = prevState
-			ELSE IF (prevState(2) < 0 .AND. prevState(5) > 0) THEN
-				CALL reflect(prevState, (/0.0_8, -1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
-				state = prevState
-			ELSE
-				PRINT *, "UHOH"
-			END IF
-!			WRITE(1) t - (20.0_8 + 50.0_8), predX, predZ - zOff
-!			EXIT
-			ELSE IF (predZ >= (-1.5_8 + zOff + 0.2_8) .AND. &
-				predZ < (-1.5_8 + zOff + 0.2_8 + 0.14478_8) .AND. &
-				ABS(predX + 0.1524_8) < (0.40_8 + 2.0179_8*(predZ + 1.5_8 - zOff - 0.2_8))/2.0_8) THEN
-				IF (prevState(2) > 0 .AND. prevState(5) < 0) THEN
-					CALL reflect(prevState, (/0.0_8, 1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
-					state = prevState
-				ELSE IF (prevState(2) < 0 .AND. prevState(5) > 0) THEN
-					CALL reflect(prevState, (/0.0_8, -1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
-					state = prevState
-				END IF
-!				PRINT *, "BOUNCE LOWER"
-!				PRINT *, predX, predZ, zOff
-			ELSE IF (predZ >= (-1.5_8 + zOff + 0.2_8 + 0.14478_8) .AND. &
-				predZ < (-1.5_8 + zOff + 0.2_8 + 0.2667_8) .AND. &
-				ABS(predX + 0.1524_8) < 0.69215_8/2.0_8) THEN
-				IF (prevState(2) > 0 .AND. prevState(5) < 0) THEN
-					CALL reflect(prevState, (/0.0_8, 1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
-					state = prevState
-				ELSE IF (prevState(2) < 0 .AND. prevState(5) > 0) THEN
-					CALL reflect(prevState, (/0.0_8, -1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
-					state = prevState
-				END IF
-!				PRINT *, "BOUNCE UPPER"
-!				PRINT *, predX, predZ, zOff
-			END IF			
-			
-			IF (t > 2000) THEN
-				EXIT
-			END IF
-		END IF
-	END DO
-	WRITE(1) energy, hitT, hitE
-END SUBROUTINE trackDaggerHitTime
-
-SUBROUTINE fixedEffDaggerHitTime(state, holdT)
-	USE symplecticInt
-	USE constants
-	USE forcesAndPotential
-	IMPLICIT NONE
-	REAL(KIND=PREC), DIMENSION(6), INTENT(INOUT) :: state
-	REAL(KIND=PREC), INTENT(IN), OPTIONAL :: holdT
-	
-	INTEGER :: i, numSteps, nHit, nHitHouseLow, nHitHouseHigh
-	REAL(KIND=PREC) :: t, fracTravel, predX, predZ, energy, zOff, zeta
-	REAL(KIND=PREC) :: cleaningTime, settlingTime, absProb, absU, deathTime
-	REAL(KIND=PREC), DIMENSION(6) :: prevState
-		
-	t = 0.0_8
-	nHit = 0
-	nHitHouseLow = 0
-	nHitHouseHigh = 0
-	
-	!Hardcoded in cleaning time, holdT defaults to 20s
-	cleaningTime = 50.0_8
-	IF (PRESENT(holdT)) THEN
-		settlingTime = cleaningTime + holdT
-	ELSE
-		settlingTime = cleaningTime + 20.0_8
-	END IF
-	
-	!FixedEff will also have neutrons decay	
-	CALL RANDOM_NUMBER(deathTime)
-	deathTime = -877.7*LOG(deathTime)
-
-	numSteps = settlingTime/dt
-	DO i=1,numSteps,1
-		CALL symplecticStep(state, dt, energy)
-		t = t + dt
-	END DO
-	
-	DO
-		prevState = state
-		CALL symplecticStep(state, dt, energy)
-		t = t + dt
-		IF (SIGN(1.0_8, state(2)) .NE. SIGN(1.0_8, prevState(2))) THEN
-			fracTravel = ABS(prevState(2))/(ABS(state(2)) + ABS(prevState(2)))
-			predX = prevState(1) + fracTravel * (state(1) - prevState(1))
-			predZ = prevState(3) + fracTravel * (state(3) - prevState(3))
-			
-			CALL zOffDipCalc(t - settlingTime, zOff)
-			IF (predX > 0.0_8) THEN
-				zeta = 0.5_8 - SQRT(predX**2 + (ABS(predZ - zOff) - 1.0_8)**2)
-			ELSE
-				zeta = 1.0_8 - SQRT(predX**2 + (ABS(predZ - zOff) - 0.5_8)**2)
-			END IF
-			!TD offset from central axis: 6" ~0.1524m
-			IF (predX > -0.3524_8 .AND. predX < 0.0476_8 .AND. zeta > 0.0_8 .AND. predZ < (-1.5_8 + zOff + 0.2_8)) THEN
-				nHit = nHit + 1
-				CALL absorb(state(5)*state(5)/(2.0_8*MASS_N), absProb)
-				CALL RANDOM_NUMBER(absU)
-				IF (absU .LT. absProb) THEN
-					WRITE(1) t - settlingTime, energy, state(5)*state(5)/(2.0_8*MASS_N), &
-					predX, 0.0_8, predZ, zOff, nHit, nHitHouseLow, nHitHouseHigh
-					EXIT
-				END IF
-                
-				IF (prevState(2) > 0 .AND. prevState(5) < 0) THEN
-					CALL reflect(prevState, (/0.0_8, 1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
-					state = prevState
-				ELSE IF (prevState(2) < 0 .AND. prevState(5) > 0) THEN
-					CALL reflect(prevState, (/0.0_8, -1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
-					state = prevState
-				ELSE
-					PRINT *, "UHOH"
-				END IF
-            ELSE IF (predZ >= (-1.5_8 + zOff + 0.2_8) .AND. &
-					predZ < (-1.5_8 + zOff + 0.2_8 + 0.14478_8) .AND. &
-					ABS(predX + 0.1524_8) < (0.40_8 + 2.0179_8*(predZ + 1.5_8 - zOff - 0.2_8))/2.0_8) THEN
-				IF (prevState(2) > 0 .AND. prevState(5) < 0) THEN
-					CALL reflect(prevState, (/0.0_8, 1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
-					state = prevState
-				ELSE IF (prevState(2) < 0 .AND. prevState(5) > 0) THEN
-				CALL reflect(prevState, (/0.0_8, -1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
-					state = prevState
-				END IF
-				nHitHouseLow = nHitHouseLow + 1
-			ELSE IF (predZ >= (-1.5_8 + zOff + 0.2_8 + 0.14478_8) .AND. &
-					predZ < (-1.5_8 + zOff + 0.2_8 + 0.2667_8) .AND. &
-					ABS(predX + 0.1524_8) < 0.69215_8/2.0_8) THEN
-				IF (prevState(2) > 0 .AND. prevState(5) < 0) THEN
-					CALL reflect(prevState, (/0.0_8, 1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
-					state = prevState
-				ELSE IF (prevState(2) < 0 .AND. prevState(5) > 0) THEN
-					CALL reflect(prevState, (/0.0_8, -1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
-					state = prevState
-				END IF
-				nHitHouseHigh = nHitHouseHigh + 1
-			END IF
-			IF (t-settlingTime > deathTime) THEN
-				EXIT
-			END IF
-		END IF
-	END DO
-END SUBROUTINE fixedEffDaggerHitTime
-
-SUBROUTINE trackDaggerAndBlock(state, holdT)
-
-	USE symplecticInt
-	USE constants
-	USE forcesAndPotential
-	IMPLICIT NONE
-	
-	REAL(KIND=PREC), DIMENSION(6), INTENT(INOUT) :: state
-	REAL(KIND=PREC), INTENT(IN), OPTIONAL :: holdT
-	
-	INTEGER :: i, numSteps, nHit, nHitHouseLow, nHitHouseHigh, nBlockHit
-	LOGICAL :: blockHit, dagHit
-	REAL(KIND=PREC) :: t, fracTravel, predX, predZ, energy, zOff, zeta, theta
-	REAL(KIND=PREC) :: cleaningTime, settlingTime, absProb, absU, deathTime, predY
-	REAL(KIND=PREC), DIMENSION(6) :: prevState
-	
-	nHit = 0
-	nHitHouseLow = 0
-	nHitHouseHigh = 0
-	nBlockHit = 0
-	blockHit = .FALSE.	
-	dagHit = .FALSE. 
-	t = 0.0_8
-	
-	theta = ACOS(state(6)/SQRT(state(4)**2 + state(5)**2 + state(6)**2))
-	
-	!Hard coded in cleaning time, defaults to 20s hold
-	cleaningTime = 50.0_8 
-	IF (PRESENT(holdT)) THEN
-		settlingTime = cleaningTime + holdT
-	ELSE
-		settlingTime = cleaningTime + 20.0_8
-	END IF 
-		
-	!Functionality for neutron decay. Presently commented out, set to kill after 2000s
-	!CALL RANDOM_NUMBER(deathTime)
-	!deathTime = -877.7*LOG(deathTime)
-	deathTime = 2000.0
-
-	numSteps = settlingTime/dt
-	DO i=1,numSteps,1
-		prevState = state
-		CALL symplecticStep(state, dt, energy, t)
-		!t = t + dt
-		CALL check_upscatter(prevState, state, blockHit)
-		IF (blockHit) THEN
-			nBlockHit = nBlockHit + 1
-			WRITE(2) t, energy, nHit, nHitHouseLow, nHitHouseHigh, &
-				nBlockHit, state(1), state(2), state(3), theta
-			blockHit = .FALSE.
-		END IF
-	END DO
-	
-	DO
-		prevState = state
-		CALL symplecticStep(state, dt, energy, t)
-		!t = t + dt
-		
-		IF ((.NOT. blockHit) .AND. (.NOT. dagHit)) THEN
-			CALL check_upscatter(prevState, state, blockHit) 
-			IF (blockHit) THEN
-				nBlockHit = nBlockHit + 1
-				WRITE(2) t, energy, nHit, nHitHouseLow, nHitHouseHigh, &
-					nBlockHit, state(1), state(2), state(3), theta
-				blockHit = .FALSE.
-			END IF 
-		END IF
-		IF (blockHit) THEN 
-			PRINT *, "hit a block!"
-			EXIT
-		END IF
-		
-		IF (SIGN(1.0_8, state(2)) .NE. SIGN(1.0_8, prevState(2))) THEN
-			fracTravel = ABS(prevState(2))/(ABS(state(2)) + ABS(prevState(2)))
-			predX = prevState(1) + fracTravel * (state(1) - prevState(1))
-			predZ = prevState(3) + fracTravel * (state(3) - prevState(3))
-			
-			CALL zOffDipCalc(t - settlingTime, zOff)
-			IF (predX > 0.0_8) THEN
-				zeta = 0.5_8 - SQRT(predX**2 + (ABS(predZ - zOff) - 1.0_8)**2)
-			ELSE
-				zeta = 1.0_8 - SQRT(predX**2 + (ABS(predZ - zOff) - 0.5_8)**2)
-			END IF
-			!TD offset from central axis: 6" ~0.1524m
-			IF (predX > -0.3524_8 .AND. predX < 0.0476_8 .AND. &
-					zeta > 0.0_8 .AND. predZ < (-1.5_8 + zOff + 0.2_8)) THEN
-				nHit = nHit + 1
-				CALL absorb(state(5)*state(5)/(2.0_8*MASS_N), absProb)
-				CALL RANDOM_NUMBER(absU)
-				IF (absU < absProb) THEN
-					WRITE(1) t - settlingTime, energy, state(5)*state(5)/(2.0_8*MASS_N), &
-						predX, 0.0_8, predZ, zOff, nHit, nHitHouseLow, nHitHouseHigh, nBlockHit, &
-						theta
-					dagHit = .TRUE.
-					EXIT
-				END IF
-                
-				IF (prevState(2) > 0 .AND. prevState(5) < 0) THEN
-					CALL reflect(prevState, (/0.0_8, 1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
-					state = prevState
-				ELSE IF (prevState(2) < 0 .AND. prevState(5) > 0) THEN
-					CALL reflect(prevState, (/0.0_8, -1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
-					state = prevState
-				ELSE
-					PRINT *, "UHOH"
-				END IF
-            ELSE IF (predZ >= (-1.5_8 + zOff + 0.2_8) .AND. &
-					predZ < (-1.5_8 + zOff + 0.2_8 + 0.14478_8) .AND. &
-					ABS(predX + 0.1524_8) < (0.40_8 + 2.0179_8*(predZ + 1.5_8 - zOff - 0.2_8))/2.0_8) THEN
-				IF (prevState(2) > 0 .AND. prevState(5) < 0) THEN
-					CALL reflect(prevState, (/0.0_8, 1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
-					state = prevState
-				ELSE IF (prevState(2) < 0 .AND. prevState(5) > 0) THEN
-				CALL reflect(prevState, (/0.0_8, -1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
-					state = prevState
-				END IF
-				nHitHouseLow = nHitHouseLow + 1
-			ELSE IF (predZ >= (-1.5_8 + zOff + 0.2_8 + 0.14478_8) .AND. &
-					predZ < (-1.5_8 + zOff + 0.2_8 + 0.2667_8) .AND. &
-					ABS(predX + 0.1524_8) < 0.69215_8/2.0_8) THEN
-				IF (prevState(2) > 0 .AND. prevState(5) < 0) THEN
-					CALL reflect(prevState, (/0.0_8, 1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
-					state = prevState
-				ELSE IF (prevState(2) < 0 .AND. prevState(5) > 0) THEN
-					CALL reflect(prevState, (/0.0_8, -1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
-					state = prevState
-				END IF
-				nHitHouseHigh = nHitHouseHigh + 1
-			END IF
-			IF (t-settlingTime > deathTime) THEN
-				EXIT
-			END IF
-		END IF
-	END DO
-END SUBROUTINE trackDaggerAndBlock
-
-SUBROUTINE trackDaggerAndBlockHeating(state, holdT, trX,trY,trZ,n, nDips,pse)
+!-----------------------------------------------------------------------
+!------- MAIN TRACKING PROGRAM! (PUT ALL FUNCTIONALITY IN HERE) --------
+!-----------------------------------------------------------------------
+SUBROUTINE trackDaggerFull(state, holdT, blockScale, nDips,pse, trX,trY,trZ,nTr)
 
 	USE symplecticInt
 	USE constants
@@ -643,143 +513,248 @@ SUBROUTINE trackDaggerAndBlockHeating(state, holdT, trX,trY,trZ,n, nDips,pse)
 	USE convertTrace
 	IMPLICIT NONE
 	
+	! The only OPTIONAL input is the heating. Everything else should be auto-set.
 	REAL(KIND=PREC), DIMENSION(6), INTENT(INOUT) :: state
-	REAL(KIND=PREC), INTENT(IN), OPTIONAL :: holdT
+	REAL(KIND=PREC), INTENT(IN) :: holdT, blockScale
+	INTEGER, INTENT(IN) :: nDips, pse
 	REAL(KIND=PREC), INTENT(IN), ALLOCATABLE, &
 						DIMENSION(:), OPTIONAL :: trX(:), trY(:), trZ(:)
-	INTEGER, INTENT(IN), OPTIONAL :: n, nDips
-	LOGICAL, INTENT(IN), OPTIONAL :: pse
+	INTEGER, INTENT(IN), OPTIONAL :: nTr
 	
-	INTEGER :: i, numSteps, nHit, nHitHouseLow, nHitHouseHigh, nBlockHit
-	LOGICAL :: blockHit, dagHit
-	REAL(KIND=PREC) :: t, fracTravel, predX, predZ, energy, zOff, zeta, theta
-	REAL(KIND=PREC) :: cleaningTime, settlingTime, absProb, absU, deathTime, predY
+	INTEGER :: i, numSteps, nHit, nHitHouseLow, nHitHouseHigh, nBlockHit, dagHit
+	LOGICAL :: exitFlag
+	REAL(KIND=PREC) :: t, fracTravel, predX, predZ, energy, zOff, zeta, theta, phi
+	REAL(KIND=PREC) :: cleaningTime, settlingTime, absProb, rNum, deathTime, predY
 	REAL(KIND=PREC), DIMENSION(6) :: prevState
+	REAL(KIND=PREC) :: trapFill, beamFill, cleanZ, countingTime, deepClean
 	
-	!Initialize our variables, including our outgoing theta
+	!Initialize our variables, including our initial theta and phi
 	nHit = 0
 	nHitHouseLow = 0
 	nHitHouseHigh = 0
 	nBlockHit = 0
-	blockHit = .FALSE.	
-	dagHit = .FALSE. 
 	t = 0.0_8
-	theta = ACOS(state(6)/SQRT(state(4)**2 + state(5)**2 + state(6)**2))
+	exitFlag = .FALSE.
+	dagHit = 0
 	
-	!Hard coded in cleaning time
-	cleaningTime = 50.0_8 
-	!If we're not doing a phase-space evolution, then we can settle for a long time.
-	IF ((PRESENT(holdT)) .AND. (.NOT. PRESENT(pse))) THEN
-		settlingTime = cleaningTime + holdT
-	ELSE IF (PRESENT(pse)) THEN
-		settlingTime = cleaningTime
-	ELSE
-		settlingTime = cleaningTime + 20.0 !Default to 20s hold
-	END IF 
-			
-	!Functionality for neutron decay. Set to kill after 3000s
-	deathTime = 3000.0
-
-	numSteps = settlingTime/dt
-	DO i=1,numSteps,1
-		prevState = state
-		CALL symplecticStep(state, dt, energy, t, trX, trY, trZ,n)
-		!t = t + dt
-		CALL check_upscatter(prevState, state, blockHit)
-		IF (blockHit) THEN
-			nBlockHit = nBlockHit + 1
-			WRITE(2) t, energy, nHit, nHitHouseLow, nHitHouseHigh, &
-				nBlockHit, state(1), state(2), state(3), theta
-			blockHit = .FALSE.
+	! Constants for timing and heights and stuff
+	trapFill = 70.0_8 !Trap filling time constant -- will change w/ roundhouse
+	beamFill = 150.0_8 !Amount of time beam is on/trap door is open
+	cleaningTime = 50.0_8 ! Cleaning time. Might make this (another!) variable
+	cleanZ = 0.380_8
+	deathTime = 3000.0_8 ! Max time of calculation. 
+	deepClean = 200.0_8 ! Time that deep cleaning takes
+	
+	! For the next runcycle, might just publish initial state and post-process. But for now...
+	theta = ACOS(state(6)/SQRT(state(4)**2 + state(5)**2 + state(6)**2))
+	phi = ACOS(state(5)/SIN(theta)) ! Does nothing because analysis software is behind
+	
+	! Choose our required settling time 
+	DO 
+		CALL RANDOM_NUMBER(rNum)
+		settlingTime = -trapFill*LOG(rNum)
+		IF (settlingTime < beamFill) THEN
+			EXIT
 		END IF
 	END DO
+			
+	! Start with filling time:
+	numSteps = settlingTime/dt
+	t= (beamFill - settlingTime)
 	
-	DO
-		prevState = state
-		CALL symplecticStep(state, dt, energy, t, trX, trY, trZ,n)
+	DO i=1,numsteps,1
+		! Catch to end run
+		IF (exitFlag) THEN
+			t = t + (numSteps- i)*dt 
+			EXIT
+		END IF
 		
-		IF ((.NOT. blockHit) .AND. (.NOT. dagHit)) THEN
-			CALL check_upscatter(prevState, state, blockHit) 
-			IF (blockHit) THEN
+		prevState = state
+		! Step either with or without heating
+		IF (PRESENT(nTr)) THEN
+			CALL symplecticStep(state, dt, energy, t, trX, trY, trZ,nTr)
+		ELSE
+			CALL symplecticStep(state, dt, energy, t)
+		END IF
+		! Check for block scatter
+		IF (blockScale .NE. 0) THEN
+			CALL check_upscatter(prevState, state, blockScale, exitFlag)
+			! If we hit the block, use the bool to write and continue
+			IF (exitFlag) THEN
 				nBlockHit = nBlockHit + 1
 				WRITE(2) t, energy, nHit, nHitHouseLow, nHitHouseHigh, &
 					nBlockHit, state(1), state(2), state(3), theta
-				blockHit = .FALSE.
-			END IF 
+				exitFlag = .FALSE.
+			END IF
 		END IF
 		
-		IF (SIGN(1.0_8, state(2)) .NE. SIGN(1.0_8, prevState(2))) THEN
-			fracTravel = ABS(prevState(2))/(ABS(state(2)) + ABS(prevState(2)))
-			predX = prevState(1) + fracTravel * (state(1) - prevState(1))
-			predZ = prevState(3) + fracTravel * (state(3) - prevState(3))
-			
-			IF (PRESENT(pse)) THEN	!Phase-Space Evolution logical operator switch
-				CALL zOffDipCalc(t - settlingTime, zOff, nDips, holdT)
-			ELSE IF (PRESENT(nDips)) THEN
-				CALL zOffDipCalc(t - settlingTime, zOff, nDips)
-			ELSE
-				CALL zOffDipCalc(t - settlingTime, zOff)
-			END IF
-			IF (predX > 0.0_8) THEN
-				zeta = 0.5_8 - SQRT(predX**2 + (ABS(predZ - zOff) - 1.0_8)**2)
-			ELSE
-				zeta = 1.0_8 - SQRT(predX**2 + (ABS(predZ - zOff) - 0.5_8)**2)
-			END IF
-			!TD offset from central axis: 6" ~0.1524m
-			IF (predX > -0.3524_8 .AND. predX < 0.0476_8 .AND. &
-					zeta > 0.0_8 .AND. predZ < (-1.5_8 + zOff + 0.2_8)) THEN
-				nHit = nHit + 1
-				CALL absorb(state(5)*state(5)/(2.0_8*MASS_N), absProb)
-				CALL RANDOM_NUMBER(absU)
-				IF (absU < absProb) THEN
-					WRITE(1) t - settlingTime, energy, state(5)*state(5)/(2.0_8*MASS_N), &
-						predX, 0.0_8, predZ, zOff, nHit, nHitHouseLow, nHitHouseHigh, nBlockHit, &
-						theta
-					dagHit = .TRUE.
-					EXIT
-				END IF
-                
-				IF (prevState(2) > 0 .AND. prevState(5) < 0) THEN
-					CALL reflect(prevState, (/0.0_8, 1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
-					state = prevState
-				ELSE IF (prevState(2) < 0 .AND. prevState(5) > 0) THEN
-					CALL reflect(prevState, (/0.0_8, -1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
-					state = prevState
-				ELSE
-					PRINT *, "UHOH"
-				END IF
-            ELSE IF (predZ >= (-1.5_8 + zOff + 0.2_8) .AND. &
-					predZ < (-1.5_8 + zOff + 0.2_8 + 0.14478_8) .AND. &
-					ABS(predX + 0.1524_8) < (0.40_8 + 2.0179_8*(predZ + 1.5_8 - zOff - 0.2_8))/2.0_8) THEN
-				IF (prevState(2) > 0 .AND. prevState(5) < 0) THEN
-					CALL reflect(prevState, (/0.0_8, 1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
-					state = prevState
-				ELSE IF (prevState(2) < 0 .AND. prevState(5) > 0) THEN
-				CALL reflect(prevState, (/0.0_8, -1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
-					state = prevState
-				END IF
-				nHitHouseLow = nHitHouseLow + 1
-			ELSE IF (predZ >= (-1.5_8 + zOff + 0.2_8 + 0.14478_8) .AND. &
-					predZ < (-1.5_8 + zOff + 0.2_8 + 0.2667_8) .AND. &
-					ABS(predX + 0.1524_8) < 0.69215_8/2.0_8) THEN
-				IF (prevState(2) > 0 .AND. prevState(5) < 0) THEN
-					CALL reflect(prevState, (/0.0_8, 1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
-					state = prevState
-				ELSE IF (prevState(2) < 0 .AND. prevState(5) > 0) THEN
-					CALL reflect(prevState, (/0.0_8, -1.0_8, 0.0_8/), (/0.0_8, 0.0_8, 1.0_8/))
-					state = prevState
-				END IF
-				nHitHouseHigh = nHitHouseHigh + 1
-			END IF
-			IF (t-settlingTime > deathTime) THEN
-				EXIT
+		! Check cleaning -- both dagger (first) and cleaner (second).
+		! No dagger hit will be recorded, just flagged 
+		CALL checkDagHit(state, prevState, cleanZ, dagHit)
+		IF (dagHit .EQ. 1) THEN
+			dagHit = 0
+			exitFlag = .TRUE.
+		ELSE
+			! Reset: we don't care if the UCN was reflected or anything.
+			dagHit = 0
+			CALL cleaning(state, prevState, cleanZ, exitFlag)
+		END IF
+		
+	END DO
+	! Now do cleaning time -- same as settling time but without any dagger hits
+	numSteps = cleaningTime/dt
+	DO i=1,numSteps,1
+		! Catch to end run
+		IF (exitFlag) THEN
+			t = t + (cleaningTime - i*dt) 
+			EXIT
+		END IF
+		
+		prevState = state
+		! Step either with or without heating
+		IF (PRESENT(nTr)) THEN
+			CALL symplecticStep(state, dt, energy, t, trX, trY, trZ,nTr)
+		ELSE
+			CALL symplecticStep(state, dt, energy, t)
+		END IF
+		! Check for block scatter
+		IF (blockScale .NE. 0) THEN
+			CALL check_upscatter(prevState, state, blockScale, exitFlag)
+			! If we hit the block, use the bool to write and continue
+			IF (exitFlag) THEN
+				nBlockHit = nBlockHit + 1
+				WRITE(2) t, energy, nHit, nHitHouseLow, nHitHouseHigh, &
+					nBlockHit, state(1), state(2), state(3), theta
+				exitFlag = .FALSE.
 			END IF
 		END IF
+		! Check if we hit the cleaner. Dagger is out of the way now.
+		CALL cleaning(state, prevState, cleanZ, exitFlag)
+		
 	END DO
-END SUBROUTINE trackDaggerAndBlockHeating
+	
+	! This is the holding time -- no dagger and no cleaner. 
+	! Only happens in normal running (no deep cleaning)
 
+	! I've introduced the mapping integer 'pse' as a flag. Truth table:
+	!	CASE 1: Normal running
+	!	CASE 2: Deep cleaning (clean at 25 cm) [for phase space evolution]
+	!	CASE 3: Height dependent time constant data
+	! We'll do a normal holding time if we DON'T have a Deep Cleaning pse run.
+	IF ((pse .EQ. 1) .OR. (pse .EQ. 3)) THEN
+		numSteps = holdT/dt
+		DO i=1,numSteps,1
+			! Catch to end run -- basically if we got cleaned already
+			IF (exitFlag) THEN
+				t = t + (holdT - i*dt) 
+				EXIT
+			END IF
+			
+			prevState = state
+			! Step either with or without heating
+			IF (PRESENT(nTr)) THEN
+				CALL symplecticStep(state, dt, energy, t, trX, trY, trZ,nTr)
+			ELSE
+				CALL symplecticStep(state, dt, energy, t)
+			END IF
+			
+			IF (blockScale .NE. 0) THEN
+				CALL check_upscatter(prevState, state, blockScale, exitFlag)
+				IF (exitFlag) THEN
+					nBlockHit = nBlockHit + 1
+					WRITE(2) t, energy, nHit, nHitHouseLow, nHitHouseHigh, &
+						nBlockHit, state(1), state(2), state(3), theta
+					exitFlag = .FALSE.
+				END IF
+			END IF
+			
+		END DO
+		! Offset for our counting 
+		countingTime = cleaningTime + beamFill + holdT
+	ELSE IF (pse .EQ. 2) THEN
+		! Deep cleaning has dagger movement before hold
+		countingTime = cleaningTime + beamFill
+	END IF
+			
+	! Now we do our unload, with the dagger moving.
+	DO
+		! Check (before running) if we're already done.
+		IF (exitFlag) THEN
+			EXIT
+		END IF
+		
+		prevState = state
+		! Step either with or without heating
+		IF (PRESENT(nTr)) THEN
+			CALL symplecticStep(state, dt, energy, t, trX, trY, trZ,nTr)
+		ELSE
+			CALL symplecticStep(state, dt, energy, t)
+		END IF
+		
+		IF (blockScale .NE. 0) THEN
+			!Only way we can make it this far is if we didn't tag exitFlag
+			CALL check_upscatter(prevState, state, blockScale, exitFlag)
+			IF (exitFlag) THEN
+				nBlockHit = nBlockHit + 1
+				WRITE(2) t, energy, nHit, nHitHouseLow, nHitHouseHigh, &
+					nBlockHit, state(1), state(2), state(3), theta
+				exitFlag = .FALSE.
+			END IF 
+		END IF
+	
+		! Put the cleaner in for deep cleaning
+		IF ((pse .EQ. 2) .AND. ((t-countingTime) .LT. deepClean)) THEN
+			CALL cleaning(state, prevState, cleanZ, exitFlag)
+		END IF
+		
+		! Calculate the dagger height
+		CALL zOffDipCalc(t - countingTime, zOff, nDips, holdT, pse)
+		! Check if we hit the dagger		
+		CALL checkDagHit(state, prevState, zOff, dagHit)
+		
+		! dagHit is a switch variable for position the neutron hits. Truth table:
+		!  -1: ERROR!!!
+		! 	0: No hits
+		! 	1: Hits the dagger, absorbed
+		!	2: Hits the dagger, reflected
+		! 	3: Hits the low housing
+		!	4: Hits the high housing
+		! I've copied this truth table into the checkDagHit subroutine for posterity.
+		SELECT CASE (dagHit)
+			CASE (-1)
+				PRINT *, "ERROR: Something weird happened with the dagger"	
+				EXIT
+			CASE (1)
+				nHit = nHit + 1
+				! Calculate dagger hit components
+				fracTravel = ABS(prevState(2))/(ABS(state(2)) + ABS(prevState(2)))
+				predX = prevState(1) + fracTravel * (state(1) - prevState(1))
+				predZ = prevState(3) + fracTravel * (state(3) - prevState(3))
+				WRITE(1) t - countingTime, energy, state(5)*state(5)/(2.0_8*MASS_N), &
+					predX, 0.0_8, predZ, zOff, nHit, nHitHouseLow, nHitHouseHigh, nBlockHit, &
+					theta
+				exitFlag = .TRUE.
+			CASE (2)
+				nHit = nHit + 1
+			CASE (3)
+				nHitHouseLow = nHitHouseLow + 1
+			CASE (4)
+				nHitHouseHigh = nHitHouseHigh + 1
+			CASE DEFAULT
+				CONTINUE
+		END SELECT
+				
+		IF (t-settlingTime > deathTime) THEN
+			exitFlag = .TRUE.
+		END IF
+		
+	END DO
+	
+END SUBROUTINE trackDaggerFull
 
+!-----------------------------------------------------------------------
 !-----------------Subroutines for debug purposes------------------------
+!-----------------------------------------------------------------------
 SUBROUTINE compPots()
 	USE forcesAndPotential
 	IMPLICIT NONE
