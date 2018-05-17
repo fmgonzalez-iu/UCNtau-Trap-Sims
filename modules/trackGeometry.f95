@@ -34,7 +34,7 @@ SUBROUTINE randomPointTrap(x,y,z,px,py,pz, minE,maxE,dist)
 
 	! Generate particle positon on trap door
 	DO
-		
+		! This is the minimum potential point
 		z = -1.464413669130002_8
 		CALL RANDOM_NUMBER(x)
 		x = x*0.15_8 - 0.075_8

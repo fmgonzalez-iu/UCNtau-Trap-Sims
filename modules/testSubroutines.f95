@@ -244,9 +244,9 @@ SUBROUTINE zOffDipCalc(t, z, nDips, holdIn, pseType)
 							400.0, 500.0/)
 			CASE (8)
 				dipHeights = (/0.490, 0.380, 0.250, 0.180, 0.140, &
-								0.110, 0.010 /)
+								0.110, 0.080, 0.010 /)
 				dipEnds = (/0.0, 40.0, 80.0, 100.0, 120.0, &
-							400.0, 500.0/)
+							140.0, 400.0, 500.0/)
 			CASE (9)
 				dipHeights = (/0.490, 0.380, 0.250, 0.180, 0.140, &
 								0.110, 0.080, 0.060, 0.010/)
@@ -373,7 +373,7 @@ SUBROUTINE absorb(ePerp, prob)
     prob = 1.0_8 - REALPART(CONJG(-mbar(2,1)/mbar(2,2))*(-mbar(2,1)/mbar(2,2)))
 END SUBROUTINE absorb
 ! Check block scattering. Set blockScale to 0.0 to turn this off.
-SUBROUTINE check_upscatter(prevState, state, blockScale, blockHit)
+SUBROUTINE check_upscatter(prevState, state, blockScale, blockHit, ePerp)
 
 	USE constants
 	USE forcesAndPotential
@@ -383,6 +383,7 @@ SUBROUTINE check_upscatter(prevState, state, blockScale, blockHit)
 	REAL(KIND=PREC), INTENT(INOUT), DIMENSION(6) :: state
 	REAL(KIND=PREC), INTENT(IN) :: blockScale
 	LOGICAL, INTENT(INOUT) :: blockHit
+	REAL(KIND=PREC), INTENT(OUT) :: ePerp
 		
 	INTEGER :: ii
 	REAL(KIND=PREC) :: hitU, upscatterProb
@@ -460,6 +461,7 @@ SUBROUTINE check_upscatter(prevState, state, blockScale, blockHit)
 		!If we don't upscatter, reflect off the block.
 		IF ((ABS(fracTravel(3)) > ABS(fracTravel(1))) .AND. &
 				(ABS(fracTravel(3)) > ABS(fracTravel(2)))) THEN
+			ePerp = shiftPrevState(6)*shiftPrevState(6)/(2.0_8*MASS_N)
 			CALL reflect(shiftPrevState, (/ 0.0_8, 0.0_8, 1.0_8 /), (/ 1.0_8, 0.0_8, 0.0_8 /))
 			state = (/ MATMUL(invRotation, shiftPrevState(1:3)) + blockPos, &
 					MATMUL(invRotation,shiftPrevState(4:6)) /)
@@ -467,6 +469,7 @@ SUBROUTINE check_upscatter(prevState, state, blockScale, blockHit)
 		ELSE IF ((ABS(fracTravel(1)) > ABS(fracTravel(2))) .AND. &
 				(ABS(fracTravel(1)) > ABS(fracTravel(3))) .AND. &
 				(fracTravel(1) < 0)) THEN
+			ePerp = shiftPrevState(4)*shiftPrevState(4)/(2.0_8*MASS_N)
 			CALL reflect(shiftPrevState, (/ 1.0_8, 0.0_8, 0.0_8 /), (/ 0.0_8, 0.0_8, 1.0_8 /))
 			state = (/ MATMUL(invRotation, shiftPrevState(1:3)) + blockPos, &
 					MATMUL(invRotation,shiftPrevState(4:6)) /)
@@ -474,6 +477,7 @@ SUBROUTINE check_upscatter(prevState, state, blockScale, blockHit)
 		ELSE IF ((ABS(fracTravel(1)) > ABS(fracTravel(2))) .AND. &
 				(ABS(fracTravel(1)) > ABS(fracTravel(3))) .AND. &
 				(fracTravel(1) > 0)) THEN
+			ePerp = shiftPrevState(4)*shiftPrevState(4)/(2.0_8*MASS_N)
 			CALL reflect(shiftPrevState, (/ -1.0_8, 0.0_8, 0.0_8 /), (/ 0.0_8, 0.0_8, 1.0_8 /))
 			state = (/ MATMUL(invRotation, shiftPrevState(1:3)) + blockPos, &
 					MATMUL(invRotation,shiftPrevState(4:6)) /)
@@ -481,6 +485,7 @@ SUBROUTINE check_upscatter(prevState, state, blockScale, blockHit)
 		ELSE IF ((ABS(fracTravel(2)) > ABS(fracTravel(1))) .AND. &
 				(ABS(fracTravel(2)) > ABS(fracTravel(3))) .AND. &
 				(fracTravel(2) < 0)) THEN
+			ePerp = shiftPrevState(5)*shiftPrevState(5)/(2.0_8*MASS_N)
 			CALL reflect(shiftPrevState, (/ 0.0_8, 1.0_8, 0.0_8 /), (/ 0.0_8, 0.0_8, 1.0_8 /))
 			state = (/ MATMUL(invRotation, shiftPrevState(1:3)) + blockPos, &
 					MATMUL(invRotation,shiftPrevState(4:6)) /)
@@ -488,6 +493,7 @@ SUBROUTINE check_upscatter(prevState, state, blockScale, blockHit)
 		ELSE IF ((ABS(fracTravel(2)) > ABS(fracTravel(1))) .AND. &
 				(ABS(fracTravel(2)) > ABS(fracTravel(3))) .AND. &
 				(fracTravel(2) > 0)) THEN
+			ePerp = shiftPrevState(5)*shiftPrevState(5)/(2.0_8*MASS_N)
 			CALL reflect(shiftPrevState, (/ 0.0_8, -1.0_8, 0.0_8 /), (/ 0.0_8, 0.0_8, 1.0_8 /))
 			state = (/ MATMUL(invRotation, shiftPrevState(1:3)) + blockPos, &
 					MATMUL(invRotation,shiftPrevState(4:6)) /)
@@ -523,12 +529,12 @@ SUBROUTINE trackDaggerFull(state, holdT, blockScale, nDips,pse, trX,trY,trZ,nTr)
 	
 	INTEGER :: i, numSteps, nHit, nHitHouseLow, nHitHouseHigh, nBlockHit, dagHit
 	LOGICAL :: exitFlag
-	REAL(KIND=PREC) :: t, fracTravel, predX, predZ, energy, zOff, zeta, theta, phi
-	REAL(KIND=PREC) :: cleaningTime, settlingTime, absProb, rNum, deathTime, predY
-	REAL(KIND=PREC), DIMENSION(6) :: prevState
-	REAL(KIND=PREC) :: trapFill, beamFill, cleanZ, countingTime, deepClean
-	
-	!Initialize our variables, including our initial theta and phi
+	REAL(KIND=PREC) :: t, fracTravel, predX, predY, predZ, energy, zOff, zeta
+	REAL(KIND=PREC) :: trapFill, beamFill, cleaningTime, settlingTime, deathTime
+	REAL(KIND=PREC) :: cleanZ, countingTime, deepClean, absProb, rNum, ePerp
+	REAL(KIND=PREC), DIMENSION(6) :: prevState, iniState
+		
+	!Initialize our variables, including our initial state (which is saved)
 	nHit = 0
 	nHitHouseLow = 0
 	nHitHouseHigh = 0
@@ -536,6 +542,7 @@ SUBROUTINE trackDaggerFull(state, holdT, blockScale, nDips,pse, trX,trY,trZ,nTr)
 	t = 0.0_8
 	exitFlag = .FALSE.
 	dagHit = 0
+	iniState = state
 	
 	! Constants for timing and heights and stuff
 	trapFill = 70.0_8 !Trap filling time constant -- will change w/ roundhouse
@@ -544,12 +551,8 @@ SUBROUTINE trackDaggerFull(state, holdT, blockScale, nDips,pse, trX,trY,trZ,nTr)
 	cleanZ = 0.380_8
 	deathTime = 3000.0_8 ! Max time of calculation. 
 	deepClean = 200.0_8 ! Time that deep cleaning takes
-	
-	! For the next runcycle, might just publish initial state and post-process. But for now...
-	theta = ACOS(state(6)/SQRT(state(4)**2 + state(5)**2 + state(6)**2))
-	phi = ACOS(state(5)/SIN(theta)) ! Does nothing because analysis software is behind
-	
-	! Choose our required settling time 
+			
+	! Choose our required settling time -- time neutron is in trap during filling
 	DO 
 		CALL RANDOM_NUMBER(rNum)
 		settlingTime = -trapFill*LOG(rNum)
@@ -560,7 +563,7 @@ SUBROUTINE trackDaggerFull(state, holdT, blockScale, nDips,pse, trX,trY,trZ,nTr)
 			
 	! Start with filling time:
 	numSteps = settlingTime/dt
-	t= (beamFill - settlingTime)
+	t = (beamFill - settlingTime)
 	
 	DO i=1,numsteps,1
 		! Catch to end run
@@ -578,12 +581,13 @@ SUBROUTINE trackDaggerFull(state, holdT, blockScale, nDips,pse, trX,trY,trZ,nTr)
 		END IF
 		! Check for block scatter
 		IF (blockScale .NE. 0) THEN
-			CALL check_upscatter(prevState, state, blockScale, exitFlag)
+			CALL check_upscatter(prevState, state, blockScale, exitFlag, ePerp)
 			! If we hit the block, use the bool to write and continue
 			IF (exitFlag) THEN
 				nBlockHit = nBlockHit + 1
 				WRITE(2) t, energy, nHit, nHitHouseLow, nHitHouseHigh, &
-					nBlockHit, state(1), state(2), state(3), theta
+					nBlockHit, state(1), state(2), state(3), ePerp, &
+					iniState(4), iniState(5), iniState(6), settlingTime
 				exitFlag = .FALSE.
 			END IF
 		END IF
@@ -592,7 +596,7 @@ SUBROUTINE trackDaggerFull(state, holdT, blockScale, nDips,pse, trX,trY,trZ,nTr)
 		! No dagger hit will be recorded, just flagged 
 		CALL checkDagHit(state, prevState, cleanZ, dagHit)
 		IF (dagHit .EQ. 1) THEN
-			dagHit = 0
+			dagHit = 1
 			exitFlag = .TRUE.
 		ELSE
 			! Reset: we don't care if the UCN was reflected or anything.
@@ -619,12 +623,13 @@ SUBROUTINE trackDaggerFull(state, holdT, blockScale, nDips,pse, trX,trY,trZ,nTr)
 		END IF
 		! Check for block scatter
 		IF (blockScale .NE. 0) THEN
-			CALL check_upscatter(prevState, state, blockScale, exitFlag)
+			CALL check_upscatter(prevState, state, blockScale, exitFlag, ePerp)
 			! If we hit the block, use the bool to write and continue
 			IF (exitFlag) THEN
 				nBlockHit = nBlockHit + 1
 				WRITE(2) t, energy, nHit, nHitHouseLow, nHitHouseHigh, &
-					nBlockHit, state(1), state(2), state(3), theta
+					nBlockHit, state(1), state(2), state(3), ePerp, &
+					iniState(4), iniState(5), iniState(6), settlingTime
 				exitFlag = .FALSE.
 			END IF
 		END IF
@@ -659,11 +664,13 @@ SUBROUTINE trackDaggerFull(state, holdT, blockScale, nDips,pse, trX,trY,trZ,nTr)
 			END IF
 			
 			IF (blockScale .NE. 0) THEN
-				CALL check_upscatter(prevState, state, blockScale, exitFlag)
+				CALL check_upscatter(prevState, state, blockScale, exitFlag, ePerp)
+				! If we hit the block, use the bool to write and continue
 				IF (exitFlag) THEN
 					nBlockHit = nBlockHit + 1
 					WRITE(2) t, energy, nHit, nHitHouseLow, nHitHouseHigh, &
-						nBlockHit, state(1), state(2), state(3), theta
+						nBlockHit, state(1), state(2), state(3), ePerp, &
+						iniState(4), iniState(5), iniState(6), settlingTime
 					exitFlag = .FALSE.
 				END IF
 			END IF
@@ -671,6 +678,7 @@ SUBROUTINE trackDaggerFull(state, holdT, blockScale, nDips,pse, trX,trY,trZ,nTr)
 		END DO
 		! Offset for our counting 
 		countingTime = cleaningTime + beamFill + holdT
+		
 	ELSE IF (pse .EQ. 2) THEN
 		! Deep cleaning has dagger movement before hold
 		countingTime = cleaningTime + beamFill
@@ -693,13 +701,15 @@ SUBROUTINE trackDaggerFull(state, holdT, blockScale, nDips,pse, trX,trY,trZ,nTr)
 		
 		IF (blockScale .NE. 0) THEN
 			!Only way we can make it this far is if we didn't tag exitFlag
-			CALL check_upscatter(prevState, state, blockScale, exitFlag)
+			CALL check_upscatter(prevState, state, blockScale, exitFlag, ePerp)
+			! If we hit the block, use the bool to write and continue
 			IF (exitFlag) THEN
 				nBlockHit = nBlockHit + 1
 				WRITE(2) t, energy, nHit, nHitHouseLow, nHitHouseHigh, &
-					nBlockHit, state(1), state(2), state(3), theta
+					nBlockHit, state(1), state(2), state(3), ePerp, &
+					iniState(4), iniState(5), iniState(6), settlingTime
 				exitFlag = .FALSE.
-			END IF 
+			END IF
 		END IF
 	
 		! Put the cleaner in for deep cleaning
@@ -729,10 +739,12 @@ SUBROUTINE trackDaggerFull(state, holdT, blockScale, nDips,pse, trX,trY,trZ,nTr)
 				! Calculate dagger hit components
 				fracTravel = ABS(prevState(2))/(ABS(state(2)) + ABS(prevState(2)))
 				predX = prevState(1) + fracTravel * (state(1) - prevState(1))
+				predY = prevState(2) + fracTravel * (state(2) - prevState(2))
 				predZ = prevState(3) + fracTravel * (state(3) - prevState(3))
-				WRITE(1) t - countingTime, energy, state(5)*state(5)/(2.0_8*MASS_N), &
-					predX, 0.0_8, predZ, zOff, nHit, nHitHouseLow, nHitHouseHigh, nBlockHit, &
-					theta
+				ePerp = state(5)*state(5)/(2.0_8*MASS_N)
+				WRITE(1) t - countingTime, energy, ePerp, predX, predY, predZ, &
+					zOff, nHit, nHitHouseLow, nHitHouseHigh, nBlockHit, &
+					iniState(4), iniState(5), iniState(6), settlingTime
 				exitFlag = .TRUE.
 			CASE (2)
 				nHit = nHit + 1
