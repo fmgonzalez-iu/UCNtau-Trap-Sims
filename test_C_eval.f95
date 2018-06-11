@@ -44,6 +44,7 @@ PROGRAM track
 	REAL(KIND=PREC) :: res_clean(10)
 	REAL(KIND=PREC), DIMENSION(:), ALLOCATABLE :: trX(:), trY(:), trZ(:)
 	REAL(KIND=PREC), ALLOCATABLE :: states(:,:)
+	LOGICAL :: nDecay
 	INTEGER :: ntraj, nDips, pse, dist, &
 			   rankMPI, sizeMPI, ierr, trajPerWorker, &
 			   seedOff, seedLen, &
@@ -65,11 +66,14 @@ PROGRAM track
 	IF (IARGC() .GT. 12 .OR. IARGC() .LT. 3) THEN
 		PRINT *, "ERROR: Not enough or too many arguments!"
 		PRINT *, "REQUIRED: timestep n_traj OUTFILE"
-		PRINT *, "OPTIONAL: (holdTime nDips PSE) (bScale OUTFILE2) (minE maxE dist heatF)"
+		PRINT *, "OPTIONAL: (holdTime nDips PSE) (minE maxE dist heatF) (bScale OUTFILE2)"
 		PRINT *, "Also note that this order has changed recently!"
 !		CALL MPI_FINALIZE(ierr)
 		CALL EXIT(0)
 	END IF
+	
+	! I'm hardcoding this in because I'm too lazy to modify command line
+	nDecay = .TRUE.
 	
 	CALL GETARG(1, arg)
 	READ(arg,*) dt
@@ -113,42 +117,24 @@ PROGRAM track
 		pse = 1
 	END IF
 	
-	IF (IARGC() .GE. 7) THEN	
+	IF (IARGC() .GE. 7) THEN
 		CALL GETARG(7, arg)
-		READ(arg,*) bScale
-		IF (bScale .LT. 0.0_8) THEN
-			PRINT *, "WARNING: block scaling cannot be negative! Removing block!"
-			bScale = 0.0_8
-		END IF
-	ELSE
-		PRINT *, "DEFAULT: bScale defaulting to 1.0 (normal block size)"
-		bScale = 1.0_8
-	END IF
-	
-	IF (IARGC() .GE. 8) THEN
-		CALL GETARG(8, fName2)
-		WRITE (rankString, "(I0)") rankMPI
-		fName2 = TRIM(fName2) // TRIM(rankString)		
-	END IF
-	
-	IF (IARGC() .GE. 9) THEN
-		CALL GETARG(9, arg)
 		READ(arg,*) minE
 	ELSE
 		PRINT *, "DEFAULT: minE defaulting to 1 cm"
 		minE = 0.01_8
 	END IF
 	
-	IF (IARGC() .GE. 10) THEN
-		CALL GETARG(10, arg)
+	IF (IARGC() .GE. 8) THEN
+		CALL GETARG(8, arg)
 		READ(arg,*) maxE
 	ELSE
 		PRINT *, "DEFAULT: maxE defaulting to 45 cm"
 		maxE = 0.45_8
 	END IF
 	
-	IF (IARGC() .GE. 11) THEN
-		CALL GETARG(11, arg)
+	IF (IARGC() .GE. 9) THEN
+		CALL GETARG(9, arg)
 		READ(arg,*) dist
 		IF (dist .LT. 0 .OR. dist .GT. 3) THEN
 			PRINT *, "WARNING: Unknown spectrum distribution! Defaulting to flat in theta!"
@@ -159,19 +145,37 @@ PROGRAM track
 		dist = 3
 	END IF 
 	
-	IF (IARGC() .GE. 12) THEN
-		CALL GETARG(11, arg)
+	IF (IARGC() .GE. 10) THEN
+		CALL GETARG(10, arg)
 		READ(arg,*) heatF
 	ELSE
 		PRINT *, "DEFAULT: heatF defaulting to 0 (no heating)!"
 		heatF = 0.0_8
 	END IF
 	
+	IF (IARGC() .GE. 11) THEN	
+		CALL GETARG(11, arg)
+		READ(arg,*) bScale
+		IF (bScale .LT. 0.0_8) THEN
+			PRINT *, "WARNING: block scaling cannot be negative! Removing block!"
+			bScale = 0.0_8
+		END IF
+	ELSE
+		PRINT *, "DEFAULT: bScale defaulting to 0.0 (no block)"
+		bScale = 0.0_8
+	END IF
+	
+	IF (IARGC() .GE. 12) THEN
+		CALL GETARG(12, fName2)
+		WRITE (rankString, "(I0)") rankMPI
+		fName2 = TRIM(fName2) // TRIM(rankString)		
+	END IF
+		
 	! Write the filenames, and open their files
 	PRINT *, fName
 	OPEN(UNIT=1,FILE=fName, FORM='UNFORMATTED')
 	! There's a flag here for the block.
-	IF (IARGC() .GE. 8) THEN
+	IF (IARGC() .GE. 12) THEN
 		PRINT *, fName2
 		OPEN(UNIT=2, FILE=fName2, FORM='UNFORMATTED')	
 	END IF
@@ -243,11 +247,11 @@ PROGRAM track
 		! It's faster to not carry traces (a big matrix) in the calc if there's no heating!
 		IF (heatF .EQ. 0.0_8) THEN
 !			PRINT *, "Heating is presently OFF"
-			CALL trackDaggerFull(states(i, :),holdTime, bScale, nDips, pse)
+			CALL trackDaggerFull(states(i, :),holdTime, bScale, nDips, pse, nDecay)
 		ELSE
 !			PRINT *, "Heating is presently ON"
 			CALL trackDaggerFull(states(i, :),holdTime, bScale, nDips, pse, &
-								trX, trY, trZ, lengthTr)
+								nDecay, trX, trY, trZ, lengthTr)
 		END IF 
 	END DO
 	

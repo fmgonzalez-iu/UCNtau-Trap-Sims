@@ -511,7 +511,7 @@ END SUBROUTINE check_upscatter
 !-----------------------------------------------------------------------
 !------- MAIN TRACKING PROGRAM! (PUT ALL FUNCTIONALITY IN HERE) --------
 !-----------------------------------------------------------------------
-SUBROUTINE trackDaggerFull(state, holdT, blockScale, nDips,pse, trX,trY,trZ,nTr)
+SUBROUTINE trackDaggerFull(state, holdT, blockScale, nDips,pse,nDecay, trX,trY,trZ,nTr)
 
 	USE symplecticInt
 	USE constants
@@ -523,6 +523,7 @@ SUBROUTINE trackDaggerFull(state, holdT, blockScale, nDips,pse, trX,trY,trZ,nTr)
 	REAL(KIND=PREC), DIMENSION(6), INTENT(INOUT) :: state
 	REAL(KIND=PREC), INTENT(IN) :: holdT, blockScale
 	INTEGER, INTENT(IN) :: nDips, pse
+	LOGICAL, INTENT(IN) :: nDecay
 	REAL(KIND=PREC), INTENT(IN), ALLOCATABLE, &
 						DIMENSION(:), OPTIONAL :: trX(:), trY(:), trZ(:)
 	INTEGER, INTENT(IN), OPTIONAL :: nTr
@@ -531,7 +532,7 @@ SUBROUTINE trackDaggerFull(state, holdT, blockScale, nDips,pse, trX,trY,trZ,nTr)
 	LOGICAL :: exitFlag
 	REAL(KIND=PREC) :: t, fracTravel, predX, predY, predZ, energy, zOff, zeta
 	REAL(KIND=PREC) :: trapFill, beamFill, cleaningTime, settlingTime, deathTime
-	REAL(KIND=PREC) :: cleanZ, countingTime, deepClean, absProb, rNum, ePerp
+	REAL(KIND=PREC) :: cleanZ, countingTime, deepClean, absProb, rNum, ePerp, nTau
 	REAL(KIND=PREC), DIMENSION(6) :: prevState, iniState
 		
 	!Initialize our variables, including our initial state (which is saved)
@@ -550,6 +551,7 @@ SUBROUTINE trackDaggerFull(state, holdT, blockScale, nDips,pse, trX,trY,trZ,nTr)
 	cleaningTime = 50.0_8 ! Cleaning time. Might make this (another!) variable
 	cleanZ = 0.380_8
 	deathTime = 3000.0_8 ! Max time of calculation. 
+	nTau = 877.7_8 ! Neutron lifetime
 	deepClean = 200.0_8 ! Time that deep cleaning takes
 			
 	! Choose our required settling time -- time neutron is in trap during filling
@@ -560,7 +562,16 @@ SUBROUTINE trackDaggerFull(state, holdT, blockScale, nDips,pse, trX,trY,trZ,nTr)
 			EXIT
 		END IF
 	END DO
-			
+	
+	! End trajectories if they decay before end of hold
+	IF (nDecay) THEN
+		CALL RANDOM_NUMBER(rNum)
+		deathTime = -nTau*LOG(rNum)
+		IF (deathTime < (settlingTime + cleaningTime + holdT)) THEN
+			exitFlag = .TRUE.
+		END IF
+	END IF 
+	
 	! Start with filling time:
 	numSteps = settlingTime/dt
 	t = (beamFill - settlingTime)
@@ -638,7 +649,7 @@ SUBROUTINE trackDaggerFull(state, holdT, blockScale, nDips,pse, trX,trY,trZ,nTr)
 		
 	END DO
 	
-	! This is the holding time -- no dagger and no cleaner. 
+	! This is the holding time -- no dagger and raised cleaner. 
 	! Only happens in normal running (no deep cleaning)
 
 	! I've introduced the mapping integer 'pse' as a flag. Truth table:
@@ -646,6 +657,8 @@ SUBROUTINE trackDaggerFull(state, holdT, blockScale, nDips,pse, trX,trY,trZ,nTr)
 	!	CASE 2: Deep cleaning (clean at 25 cm) [for phase space evolution]
 	!	CASE 3: Height dependent time constant data
 	! We'll do a normal holding time if we DON'T have a Deep Cleaning pse run.
+	
+	cleanZ = 0.430_8
 	IF ((pse .EQ. 1) .OR. (pse .EQ. 3)) THEN
 		numSteps = holdT/dt
 		DO i=1,numSteps,1
@@ -674,6 +687,8 @@ SUBROUTINE trackDaggerFull(state, holdT, blockScale, nDips,pse, trX,trY,trZ,nTr)
 					exitFlag = .FALSE.
 				END IF
 			END IF
+			! Check if we hit the cleaner.
+			CALL cleaning(state, prevState, cleanZ, exitFlag)
 			
 		END DO
 		! Offset for our counting 
