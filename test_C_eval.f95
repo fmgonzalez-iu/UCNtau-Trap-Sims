@@ -213,7 +213,10 @@ PROGRAM track
 	trajPerWorker = ntraj/sizeMPI	
 	ALLOCATE(states(ntraj,6))
 	DO i=1,ntraj,1
-		CALL randomPointTrap(states(i,1), states(i,2), states(i,3), &
+		!CALL randomPointTrap(states(i,1), states(i,2), states(i,3), &
+!								states(i,4), states(i,5), states(i,6), &
+!								minE, maxE, dist)
+		CALL randomPointTrapOpt(states(i,1), states(i,2), states(i,3), &
 								states(i,4), states(i,5), states(i,6), &
 								minE, maxE, dist)
 	END DO
@@ -253,6 +256,7 @@ PROGRAM track
 			CALL trackDaggerFull(states(i, :),holdTime, bScale, nDips, pse, &
 								nDecay, trX, trY, trZ, lengthTr)
 		END IF 
+		!CALL trackDagger50Hit(states(i,:), holdTime, nDips)
 	END DO
 	
 	!-------------------------------------------------------------------

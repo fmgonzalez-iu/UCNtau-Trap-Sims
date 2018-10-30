@@ -94,6 +94,103 @@ SUBROUTINE randomPointTrap(x,y,z,px,py,pz, minE,maxE,dist)
     pz = (target_p/p_len)*pz
 !    PRINT *, x, y, z, px, py, pz, (px*px + py*py + pz*pz)/(2.0_8*MASS_N), totalU, theta
 END SUBROUTINE randomPointTrap
+
+SUBROUTINE randomPointTrapOpt(x,y,z,px,py,pz, minE,maxE,dist)
+
+	USE forcesAndPotential
+	USE constants
+	IMPLICIT NONE
+	
+	REAL(KIND=PREC), INTENT(OUT) :: x, y, z, px, py, pz
+	REAL(KIND=PREC), INTENT(IN) :: minE, maxE
+	INTEGER, INTENT(IN) :: dist
+	
+	REAL(KIND=PREC) :: minEnergy, maxEnergy, energy, totalU, & !Used for energy
+					target_p, p_len, max_p !Used for momentum scaling
+	REAL(KIND=PREC) :: u1, u2, phi, theta !Used for lambertian generation of track directions
+	REAL(KIND=PREC) :: eScale, thScale, eInt
+	
+	! Scaling factors hard coded in here to reduce errors
+	eScale = 1.2
+	thScale = 1.28
+	
+	! Scale our input max/min to get our energies
+	minEnergy = GRAV*MASS_N*minE
+	maxEnergy = GRAV*MASS_N*maxE
+	max_p = SQRT(2.0_8*MASS_N*maxEnergy)
+	
+	! Generate particle above energy threshold
+	DO
+		CALL RANDOM_NUMBER(eInt)
+		energy = maxEnergy * (eInt ** eScale)
+		IF (energy > minEnergy) THEN
+			EXIT
+		END IF
+	END DO
+
+	! Generate particle positon on trap door
+	DO
+		! This is the minimum potential point
+		z = -1.464413669130002_8
+		CALL RANDOM_NUMBER(x)
+		x = x*0.15_8 - 0.075_8
+		CALL RANDOM_NUMBER(y)
+		y = y*0.15_8 - 0.075_8
+		! Make sure said particle can reach this value
+		CALL totalPotential(x, y, z, totalU)
+		IF (totalU < energy) THEN
+			EXIT
+		END IF
+	END DO
+		
+	target_p = SQRT(2.0_8*MASS_N*(energy - totalU))
+	
+	! Set particle's direction
+	CALL RANDOM_NUMBER(u1)
+	CALL RANDOM_NUMBER(u2)
+	SELECT CASE (dist)
+		CASE (1)
+			!cos(theta)*sin(theta) distribution
+			theta = ASIN(SQRT(u1))
+			phi = 2.0_8 * PI * u2
+			
+			px = SIN(theta)*COS(phi)
+			py = SIN(theta)*SIN(phi)
+			pz = COS(theta)**thScale
+			
+		CASE (2)
+			!Isotropic emission
+			u1 = u1 * 2 - 1.0_8
+			phi = u2 * 2.0_8 * PI
+			
+			px = SQRT(1-u1*u1)*COS(phi)
+			py = SQRT(1-u1*u1)*SIN(phi)
+			pz = u1
+		
+		CASE (3) 
+			!Flat in theta emission -- DEFAULT from test_C_eval (for now)
+			theta = u1 * PI / 2.0_8
+			phi = 2.0_8 * PI * u2
+
+		    px = SIN(theta)*COS(phi)
+		    py = SIN(theta)*SIN(phi)
+		    pz = COS(theta)
+		
+		CASE DEFAULT
+			PRINT *, "ERROR: Something happened with generating distribution tracks!"
+			STOP
+	
+	END SELECT
+    
+    ! Scale momentum by energy    
+    p_len = SQRT(px*px + py*py + pz*pz)
+
+    px = (target_p/p_len)*px
+    py = (target_p/p_len)*py
+    pz = (target_p/p_len)*pz
+!    PRINT *, x, y, z, px, py, pz, (px*px + py*py + pz*pz)/(2.0_8*MASS_N), totalU, theta
+END SUBROUTINE randomPointTrapOpt
+
 !
 SUBROUTINE randomPointTrapOptimum(x,y,z,px,py,pz)
     USE forcesAndPotential

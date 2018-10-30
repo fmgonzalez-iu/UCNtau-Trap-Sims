@@ -54,10 +54,10 @@ SUBROUTINE cleaning(state, prevState, cleanZ, cleanHit)
 		
 END SUBROUTINE cleaning
 ! Check if we hit the dagger
-SUBROUTINE checkDagHit(state, prevState, zOff, dagHit)
+SUBROUTINE checkDagHit(state, prevState, zOff, dagThicc, dagHit)
 
 	REAL(KIND=PREC), DIMENSION(6), INTENT(INOUT) :: state, prevState
-	REAL(KIND=PREC), INTENT(IN) :: zOff
+	REAL(KIND=PREC), INTENT(IN) :: zOff, dagThicc
 	INTEGER, INTENT(OUT) :: dagHit
 	
 	REAL(KIND=PREC) :: fracTravel, predX, predZ, zeta, absU, absProb
@@ -92,8 +92,13 @@ SUBROUTINE checkDagHit(state, prevState, zOff, dagHit)
 				zeta > 0.0_8 .AND. predZ < (-1.5_8 + zOff + 0.2_8)) THEN
 					
 			! Need to check if we are absorbed or reflected
-			CALL absorb(state(5)*state(5)/(2.0_8*MASS_N), absProb)
-			CALL RANDOM_NUMBER(absU)
+			IF (dagThicc > 0.0) THEN
+				CALL absorb(state(5)*state(5)/(2.0_8*MASS_N), dagThicc, absProb)
+				CALL RANDOM_NUMBER(absU)
+			ELSE 
+				absProb = 0.0
+				absU = 1.0
+			END IF
 			IF (absU < absProb) THEN
 				! Hit the dagger and absorbed!
 				dagHit = 1
@@ -289,8 +294,9 @@ SUBROUTINE zOffDipCalc(t, z, nDips, holdIn, pseType)
 		END IF
 	END DO
 	
-	speed = SIGN(1.0_8, dipHeights(i-1) - dipHeights(i))*0.49_8/13.0_8
-		
+	!speed = SIGN(1.0_8, dipHeights(i-1) - dipHeights(i))*0.49_8/13.0_8 ! speed for 2017 dagger
+	speed = SIGN(1.0_8, dipHeights(i-1) - dipHeights(i))*0.49_8/13.0_8 ! speed for 2018 dagger	
+	
 	z = dipHeights(i-1) - speed*(t-dipEnds(i-1))
 	
     IF ((speed .GT. 0 .AND. z .LT. dipHeights(i)) .OR. (speed .LT. 0 .AND. z .GT. dipHeights(i))) THEN
@@ -332,9 +338,9 @@ SUBROUTINE reflect(state, norm, tang)
 	
 END SUBROUTINE reflect
 ! General absorption subroutine
-SUBROUTINE absorb(ePerp, prob)
+SUBROUTINE absorb(ePerp, dagThicc, prob)
     USE constants
-    REAL(KIND=PREC), INTENT(IN) :: ePerp
+    REAL(KIND=PREC), INTENT(IN) :: ePerp, dagThicc
     REAL(KIND=PREC), INTENT(OUT) :: prob
     REAL(KIND=8) :: voxide, woxide, vboron, wboron, vznd, wzns
     COMPLEX, DIMENSION(4) :: pots, zs
@@ -359,7 +365,7 @@ SUBROUTINE absorb(ePerp, prob)
     pots(4) = CMPLX(vzns, -wzns)
     zs(1) = (0.0, 0.0)
     zs(2) = (0.0, 0.0)
-    zs(3) = (5.76556e-9) !This is the Boron layer thickness
+    zs(3) = (5.76556e-9) !This is the Boron layer thickness (Old dagger)
     zs(4) = (10000e-9)
     mbar(1,1) = (1, 0)
     mbar(1,2) = (0, 0)
@@ -529,10 +535,10 @@ SUBROUTINE trackDaggerFull(state, holdT, blockScale, nDips,pse,nDecay, trX,trY,t
 	INTEGER, INTENT(IN), OPTIONAL :: nTr
 	
 	INTEGER :: i, numSteps, nHit, nHitHouseLow, nHitHouseHigh, nBlockHit, dagHit
-	LOGICAL :: exitFlag
+	LOGICAL :: exitFlag, checkAbs
 	REAL(KIND=PREC) :: t, fracTravel, predX, predY, predZ, energy, zOff, zeta
 	REAL(KIND=PREC) :: trapFill, beamFill, cleaningTime, settlingTime, deathTime
-	REAL(KIND=PREC) :: cleanZ, countingTime, deepClean, absProb, rNum, ePerp, nTau
+	REAL(KIND=PREC) :: cleanZ, countingTime, deepClean, absProb, rNum, ePerp, nTau, dagThicc
 	REAL(KIND=PREC), DIMENSION(6) :: prevState, iniState
 		
 	!Initialize our variables, including our initial state (which is saved)
@@ -542,6 +548,7 @@ SUBROUTINE trackDaggerFull(state, holdT, blockScale, nDips,pse,nDecay, trX,trY,t
 	nBlockHit = 0
 	t = 0.0_8
 	exitFlag = .FALSE.
+	checkAbs = .TRUE.
 	dagHit = 0
 	iniState = state
 	
@@ -553,6 +560,7 @@ SUBROUTINE trackDaggerFull(state, holdT, blockScale, nDips,pse,nDecay, trX,trY,t
 	deathTime = 3000.0_8 ! Max time of calculation. 
 	nTau = 877.7_8 ! Neutron lifetime
 	deepClean = 200.0_8 ! Time that deep cleaning takes
+	dagThicc = 5.76556e-9 ! Thickness of dagger boron layer
 			
 	! Choose our required settling time -- time neutron is in trap during filling
 	DO 
@@ -605,7 +613,7 @@ SUBROUTINE trackDaggerFull(state, holdT, blockScale, nDips,pse,nDecay, trX,trY,t
 		
 		! Check cleaning -- both dagger (first) and cleaner (second).
 		! No dagger hit will be recorded, just flagged 
-		CALL checkDagHit(state, prevState, cleanZ, dagHit)
+		CALL checkDagHit(state, prevState, cleanZ, dagThicc, dagHit)
 		IF (dagHit .EQ. 1) THEN
 			dagHit = 1
 			exitFlag = .TRUE.
@@ -735,7 +743,7 @@ SUBROUTINE trackDaggerFull(state, holdT, blockScale, nDips,pse,nDecay, trX,trY,t
 		! Calculate the dagger height
 		CALL zOffDipCalc(t - countingTime, zOff, nDips, holdT, pse)
 		! Check if we hit the dagger		
-		CALL checkDagHit(state, prevState, zOff, dagHit)
+		CALL checkDagHit(state, prevState, zOff, dagThicc, dagHit)
 		
 		! dagHit is a switch variable for position the neutron hits. Truth table:
 		!  -1: ERROR!!!
@@ -778,6 +786,182 @@ SUBROUTINE trackDaggerFull(state, holdT, blockScale, nDips,pse,nDecay, trX,trY,t
 	END DO
 	
 END SUBROUTINE trackDaggerFull
+!-----------------------------------------------------------------------
+!------- ALTERNATE TRACKING PROGRAM! (FOR NEW DAGGER THICKNESS) --------
+!-----------------------------------------------------------------------
+SUBROUTINE trackDagger50Hit(state, holdT, nDips)
+
+	USE symplecticInt
+	USE constants
+	USE forcesAndPotential
+	USE convertTrace
+	IMPLICIT NONE
+	
+	! This code is the same as trackDaggerFull, BUT there is default no heating or block.
+	! This means that we've removed trackDaggerFull's blockScale, pse, nDecay,trX...
+	REAL(KIND=PREC), DIMENSION(6), INTENT(INOUT) :: state
+	REAL(KIND=PREC), INTENT(IN) :: holdT
+	INTEGER, INTENT(IN) :: nDips
+	
+	INTEGER :: i, numSteps, nHit, nHitHouseLow, nHitHouseHigh, dagHit
+	LOGICAL :: exitFlag
+	REAL(KIND=PREC) :: t, fracTravel, predX, predY, predZ, energy, zOff, zeta
+	REAL(KIND=PREC) :: trapFill, beamFill, cleaningTime, settlingTime, deathTime
+	REAL(KIND=PREC) :: cleanZ, countingTime, rNum, ePerp, nTau, dagThicc
+	REAL(KIND=PREC), DIMENSION(6) :: prevState, iniState
+		
+	!Initialize our variables, including our initial state (which is saved)
+	nHit = 0
+	nHitHouseLow = 0
+	nHitHouseHigh = 0
+	t = 0.0_8
+	exitFlag = .FALSE.
+	dagHit = 0
+	iniState = state
+	
+	! Constants for timing and heights and stuff
+	trapFill = 70.0_8 !Trap filling time constant -- will change w/ roundhouse
+	beamFill = 150.0_8 !Amount of time beam is on/trap door is open
+	cleaningTime = 50.0_8 ! Cleaning time. Might make this (another!) variable
+	cleanZ = 0.380_8
+	deathTime = 3000.0_8 ! Max time of calculation. 
+	nTau = 877.7_8 ! Neutron lifetime
+	dagThicc = -1.0 ! Thickness of dagger -- set to skip absorption
+	
+	! Choose our required settling time -- time neutron is in trap during filling
+	DO 
+		CALL RANDOM_NUMBER(rNum)
+		settlingTime = -trapFill*LOG(rNum)
+		IF (settlingTime < beamFill) THEN
+			EXIT
+		END IF
+	END DO
+	
+	! Start with filling time:
+	numSteps = settlingTime/dt
+	t = (beamFill - settlingTime)
+	
+	DO i=1,numsteps,1
+		! Catch to end run -- only comes from cleaning
+		IF (exitFlag) THEN
+			t = t + (numSteps- i)*dt 
+			EXIT
+		END IF
+		
+		prevState = state
+		! Symplectic step
+		CALL symplecticStep(state, dt, energy, t)
+		
+		! Check cleaning -- both dagger (first) and cleaner (second).
+		! No dagger hit will be recorded, we just want proper reflections.
+		CALL checkDagHit(state, prevState, cleanZ, dagThicc, dagHit)
+		
+		! Reset: we don't care if the UCN was reflected for anything but PSE
+		dagHit = 0
+		CALL cleaning(state, prevState, cleanZ, exitFlag)
+		
+	END DO
+	
+	! Now do cleaning time -- same as settling time but without any dagger hits
+	numSteps = cleaningTime/dt
+	DO i=1,numSteps,1
+		! Catch to end run
+		IF (exitFlag) THEN
+			t = t + (cleaningTime - i*dt) 
+			EXIT
+		END IF
+		
+		prevState = state
+		! Step, no heating
+		CALL symplecticStep(state, dt, energy, t)
+		
+		! Check if we hit the cleaner. Dagger is out of the way now.
+		CALL cleaning(state, prevState, cleanZ, exitFlag)
+		
+	END DO
+	
+	! This is the holding time -- no dagger and raised cleaner. 
+	! Raise cleaner
+	cleanZ = 0.430_8
+	
+	numSteps = holdT/dt
+	DO i=1,numSteps,1
+		! Catch to end run -- basically if we got cleaned already
+		IF (exitFlag) THEN
+			t = t + (holdT - i*dt) 
+			EXIT
+		END IF
+		
+		prevState = state
+		
+		! Symplectic Step
+		CALL symplecticStep(state, dt, energy, t)
+	
+		! Check if we hit the (raised) cleaner.
+		CALL cleaning(state, prevState, cleanZ, exitFlag)
+		
+	END DO
+	
+	! Offset for our counting 
+	countingTime = cleaningTime + beamFill + holdT
+				
+	! Now we do our unload, with the dagger moving.
+	DO
+		! Check (before running) if we're already done.
+		IF (exitFlag) THEN
+			EXIT
+		END IF
+		
+		prevState = state
+		! Step without heating
+		CALL symplecticStep(state, dt, energy, t)
+		
+		! Calculate the dagger height
+		CALL zOffDipCalc(t - countingTime, zOff, nDips, holdT, pse)
+		! Check if we hit the dagger		
+		CALL checkDagHit(state, prevState, zOff, dagThicc, dagHit)
+		
+		! dagHit is a switch variable for position the neutron hits. Truth table:
+		!  -1: ERROR!!!
+		! 	0: No hits
+		! 	1: Hits the dagger, absorbed
+		!	2: Hits the dagger, reflected
+		! 	3: Hits the low housing
+		!	4: Hits the high housing
+		! I've copied this truth table into the checkDagHit subroutine for posterity.
+		! We should NEVER see 1 since we have a nonexistent absorption subroutine.
+		SELECT CASE (dagHit)
+			CASE (-1)
+				PRINT *, "ERROR: Something weird happened with the dagger"	
+				EXIT
+			CASE (1)
+				PRINT *, "ERROR: Something weird happened with the dagger's absorption!"	
+				EXIT
+			CASE (2)
+				nHit = nHit + 1
+				fracTravel = ABS(prevState(2))/(ABS(state(2)) + ABS(prevState(2)))
+				predX = prevState(1) + fracTravel * (state(1) - prevState(1))
+				predY = prevState(2) + fracTravel * (state(2) - prevState(2))
+				predZ = prevState(3) + fracTravel * (state(3) - prevState(3))
+				ePerp = state(5)*state(5)/(2.0_8*MASS_N)
+				WRITE(1) t - countingTime, energy, ePerp, predX, predY, predZ, &
+					zOff, nHit, nHitHouseLow, nHitHouseHigh,  &
+					iniState(4), iniState(5), iniState(6), settlingTime
+			CASE (3)
+				nHitHouseLow = nHitHouseLow + 1
+			CASE (4)
+				nHitHouseHigh = nHitHouseHigh + 1
+			CASE DEFAULT
+				CONTINUE
+		END SELECT
+				
+		IF (nHit > 50) THEN
+			exitFlag = .TRUE.
+		END IF
+		
+	END DO
+	
+END SUBROUTINE trackDagger50Hit
 
 !-----------------------------------------------------------------------
 !-----------------Subroutines for debug purposes------------------------

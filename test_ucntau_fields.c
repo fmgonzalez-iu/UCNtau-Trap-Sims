@@ -28,7 +28,7 @@ int main(int argc, char** argv) {
 //		y = 0.1;
 //		x = -0.1 + 0.2 * (i/1000.0);
 		z = -1.465 + i * (.001/100.0);
-		force_(&x, &y, &z, &fx, &fy, &fz, &u, &t, &freq);
+		force_(&x, &y, &z, &fx, &fy, &fz, &u, &t);
 //		printf("%f %e\n", 100*(z+1.5), (u - -2.390245661413933e-26)/(GRAV*MASS_N)*100);
 		printf("%f %e\n", 100*(z+1.5), (u - -2.390245661413933e-26)*JTONEV);
 //		printf("%f %e\n", x, (u - -2.390245661413933e-26)*JTONEV);
